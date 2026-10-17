@@ -14,7 +14,7 @@
 </style>
 </head>
 <body>
-<div class="topline">公開前の <strong>操作確認用デモ</strong> です。声の取引・データ共有はまだできません。会員登録機能は準備中です。</div>
+<div class="topline">公開前の <strong>操作確認用デモ</strong> です。声の取引・データ共有はまだできません。会員登録・ログインは試験運用中です。</div>
 <header class="header"><div class="wrap nav"><a href="#top" class="logo" aria-label="KOENI ホーム"><span class="logo-icon">◖</span><span>koeni<small>声のマーケット（仮称）</small></span></a><nav class="nav-links"><a href="#voices">声を探す</a><a href="#requests">依頼を探す</a><a href="#how">使い方</a></nav><div class="nav-actions"><button class="btn light" type="button" id="authTrigger">ログイン / 登録</button><button class="btn primary" data-action="sell">声を出品する ↗</button></div></div></header>
 <main id="top">
 <section class="wrap hero"><div><div class="eyebrow">♫ まだ知らない、声の可能性へ。</div><h1>あなたの声が、<br>誰かの<em>「ほしい」</em>に。</h1><p>ナレーションも、セリフも、ちょっと変わった笑い声も。声を売りたい人と、声を探している人が出会える場所。プロじゃなくたって、声は価値になる。</p><div class="hero-actions"><a href="#voices" class="btn primary">声を探してみる →</a><button class="btn light" data-action="sell">自分の声を出品する</button></div><div class="micro">✓ <b>誰でも出品OK</b>　✓ 既製音声もオーダー収録も　✓ <b>本画面は試作版</b></div></div><div class="hero-art" aria-hidden="true"><div class="orb"></div><div class="mini-card one"><div class="mini-head"><span class="avatar" style="background:#ffe7d8;color:#d8794c">は</span><span><strong>はる · 落ち着く低音</strong><small>朗読 / ナレーション</small></span></div><div class="waves" data-wave="1"></div></div><div class="mini-card two"><div class="mini-head"><span class="avatar" style="background:#fce5ed;color:#d7679a">る</span><span><strong>るな · 元気な声</strong><small>セリフ / ショート動画</small></span></div><div class="waves" data-wave="2"></div></div><div class="mini-card three"><div class="mini-head"><span class="avatar" style="background:#e0f0eb;color:#409c87">?</span><span><strong>こんな声、ありませんか？</strong><small>声のリクエストを募集</small></span></div><div class="waves" data-wave="3"></div></div><div class="float-label">Every voice has a place.</div></div></section>
@@ -71,17 +71,17 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&el('modalRoot').inn
 })();
 </script>
 <script>
-/* KOENI only: fill in dedicated Supabase project URL and PUBLISHABLE key.
+/* KOENI uses its dedicated Supabase project URL and PUBLISHABLE key.
    Publishable keys are designed for public browser apps; never put service_role / secret keys here.
    Authentication is disabled until both values are configured. */
 window.KOENI_AUTH_CONFIG = Object.freeze({
-  url: '',
-  publishableKey: ''
+  url: 'https://tiyyxtbmaxtdsmmrdsjd.supabase.co',
+  publishableKey: 'sb_publishable_jlIbL7sH-Gzj55CMJS2CjQ_LDsTGuyf'
 });
 
 </script>
 <script>
-/* KOENI v0.2 — authentication UI. Real authentication is enabled only when auth-config.js contains a dedicated Supabase project URL and public key. */
+/* KOENI v0.2 — authentication UI using the dedicated Supabase project via KOENI_AUTH_CONFIG. */
 (() => {
   'use strict';
   const cfg = window.KOENI_AUTH_CONFIG || {};
