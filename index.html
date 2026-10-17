@@ -148,7 +148,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
       ${signup?'<div class="auth-field"><label for="auth-confirm">パスワード（確認）</label><input id="auth-confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" required></div>':''}
       <label class="auth-showpass"><input id="auth-visibility" type="checkbox"> パスワードを表示</label>
       <button class="btn primary auth-primary" type="submit" ${state.busy?'disabled':''}>${signup?'会員登録する':'ログインする'}</button>
-    </form><p class="auth-muted">※ 現在の音声出品・購入画面は取引が発生しないデモです。</p>`;
+    </form><p class="auth-muted">※ 音声出品・購入画面は引き続きデモです。一般向けの確認メール配信は準備中のため、会員登録は運営テストを優先しています。</p>`;
   }
   function linksHTML() {
     if (!configured || state.view === 'account' || state.view === 'reset') return '';
@@ -181,7 +181,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
   }
   async function submit(event) {
     event.preventDefault(); if (!state.client || state.busy) return;
-    const form = event.currentTarget; if (!form.reportValidity()) return;
+    const form = event.target; if (!(form instanceof HTMLFormElement) || !form.reportValidity()) return;
     const data = new FormData(form);
     const kind = form.dataset.authForm;
     const email = String(data.get('email') || '').trim();
