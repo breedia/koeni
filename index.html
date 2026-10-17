@@ -14,8 +14,8 @@
 </style>
 </head>
 <body>
-<div class="topline">公開前の <strong>操作確認用デモ</strong> です。実際の取引・会員登録・データ共有はできません。</div>
-<header class="header"><div class="wrap nav"><a href="#top" class="logo" aria-label="KOENI ホーム"><span class="logo-icon">◖</span><span>koeni<small>声のマーケット（仮称）</small></span></a><nav class="nav-links"><a href="#voices">声を探す</a><a href="#requests">依頼を探す</a><a href="#how">使い方</a></nav><div class="nav-actions"><button class="btn light" data-action="mypage">マイページ</button><button class="btn primary" data-action="sell">声を出品する ↗</button></div></div></header>
+<div class="topline">公開前の <strong>操作確認用デモ</strong> です。声の取引・データ共有はまだできません。会員登録機能は準備中です。</div>
+<header class="header"><div class="wrap nav"><a href="#top" class="logo" aria-label="KOENI ホーム"><span class="logo-icon">◖</span><span>koeni<small>声のマーケット（仮称）</small></span></a><nav class="nav-links"><a href="#voices">声を探す</a><a href="#requests">依頼を探す</a><a href="#how">使い方</a></nav><div class="nav-actions"><button class="btn light" type="button" id="authTrigger">ログイン / 登録</button><button class="btn primary" data-action="sell">声を出品する ↗</button></div></div></header>
 <main id="top">
 <section class="wrap hero"><div><div class="eyebrow">♫ まだ知らない、声の可能性へ。</div><h1>あなたの声が、<br>誰かの<em>「ほしい」</em>に。</h1><p>ナレーションも、セリフも、ちょっと変わった笑い声も。声を売りたい人と、声を探している人が出会える場所。プロじゃなくたって、声は価値になる。</p><div class="hero-actions"><a href="#voices" class="btn primary">声を探してみる →</a><button class="btn light" data-action="sell">自分の声を出品する</button></div><div class="micro">✓ <b>誰でも出品OK</b>　✓ 既製音声もオーダー収録も　✓ <b>本画面は試作版</b></div></div><div class="hero-art" aria-hidden="true"><div class="orb"></div><div class="mini-card one"><div class="mini-head"><span class="avatar" style="background:#ffe7d8;color:#d8794c">は</span><span><strong>はる · 落ち着く低音</strong><small>朗読 / ナレーション</small></span></div><div class="waves" data-wave="1"></div></div><div class="mini-card two"><div class="mini-head"><span class="avatar" style="background:#fce5ed;color:#d7679a">る</span><span><strong>るな · 元気な声</strong><small>セリフ / ショート動画</small></span></div><div class="waves" data-wave="2"></div></div><div class="mini-card three"><div class="mini-head"><span class="avatar" style="background:#e0f0eb;color:#409c87">?</span><span><strong>こんな声、ありませんか？</strong><small>声のリクエストを募集</small></span></div><div class="waves" data-wave="3"></div></div><div class="float-label">Every voice has a place.</div></div></section>
 <div class="wrap stats"><div class="stat"><span class="ico">◉</span><span><b>気になる声を試聴</b>声色・感情から探せる</span></div><div class="stat"><span class="ico">✎</span><span><b>台本でオーダー</b>ぴったりの声を依頼</span></div><div class="stat"><span class="ico">↗</span><span><b>逆指名で募集</b>欲しい声を投稿できる</span></div></div>
@@ -69,6 +69,197 @@ async function clearData(){if(!confirm('このブラウザに保存した出品�
 document.addEventListener('click',e=>{const b=e.target.closest('[data-action],[data-category],[data-fav],[data-detail],[data-play],[data-checkout],[data-order],[data-propose],[data-tab],[data-delete]');if(!b)return;if(b.matches('a'))e.preventDefault();if(b.dataset.action){const a=b.dataset.action;if(a==='close')closeModal();if(a==='sell')sell();if(a==='mypage')mypage();if(a==='request-create')requestCreate();if(a==='clear')clearData();return}if(b.dataset.category){state.selected=b.dataset.category;voices()}if(b.dataset.fav){const id=b.dataset.fav;state.favorites=state.favorites.includes(id)?state.favorites.filter(x=>x!==id):[...state.favorites,id];save();if(el('modalRoot').querySelector('[data-checkout],[data-order]')){detail(id)}voices();toast(state.favorites.includes(id)?'お気に入りに追加しました':'お気に入りを解除しました')}if(b.dataset.detail)detail(b.dataset.detail);if(b.dataset.play)playVoice(b.dataset.play);if(b.dataset.checkout)checkout(b.dataset.checkout);if(b.dataset.order)order(b.dataset.order);if(b.dataset.propose)propose(b.dataset.propose);if(b.dataset.tab)mypage(b.dataset.tab);if(b.dataset.delete)deleteItem(b.dataset.delete)});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&el('modalRoot').innerHTML)closeModal()});el('voiceSearch').addEventListener('input',voices);el('typeFilter').addEventListener('change',voices);el('sortFilter').addEventListener('change',voices);voices();requests();
 })();
+</script>
+<script>
+/* KOENI only: fill in dedicated Supabase project URL and PUBLISHABLE key.
+   Publishable keys are designed for public browser apps; never put service_role / secret keys here.
+   Authentication is disabled until both values are configured. */
+window.KOENI_AUTH_CONFIG = Object.freeze({
+  url: '',
+  publishableKey: ''
+});
+
+</script>
+<script>
+/* KOENI v0.2 — authentication UI. Real authentication is enabled only when auth-config.js contains a dedicated Supabase project URL and public key. */
+(() => {
+  'use strict';
+  const cfg = window.KOENI_AUTH_CONFIG || {};
+  const configured = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(cfg.url || '') && /^sb_publishable_|^eyJ/.test(cfg.publishableKey || '');
+  const state = { client: null, user: null, busy: false, view: 'login', ready: !configured, message: '', error: '' };
+  const trigger = document.getElementById('authTrigger');
+  if (!trigger) return;
+  const root = document.createElement('div');
+  root.id = 'authRoot';
+  document.body.append(root);
+  const style = document.createElement('style');
+  style.textContent = `
+    #authTrigger{max-width:135px;overflow:hidden;text-overflow:ellipsis}
+    @media(max-width:760px){.nav-actions #authTrigger{display:inline-flex;font-size:11px;padding:8px 10px}.nav-actions [data-action="sell"]{font-size:11px;padding:8px 10px}}
+    @media(max-width:380px){.nav-actions #authTrigger{max-width:72px}.nav-actions [data-action="sell"]{padding-inline:8px}.logo{font-size:20px}.nav{gap:6px}}
+    .auth-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(24,20,36,.58);overflow-y:auto}
+    .auth-panel{position:relative;width:min(100%,440px);max-height:calc(100dvh - 36px);overflow-y:auto;background:#fff;border-radius:22px;box-shadow:0 24px 70px rgba(23,15,47,.22);padding:26px}
+    .auth-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:20px}
+    .auth-head h2{font-size:23px;line-height:1.45;margin:0}.auth-head p{font-size:12px;color:#696674;margin:5px 0 0}
+    .auth-close{background:#f6f4f6;border:0;width:35px;height:35px;border-radius:12px;font-size:20px;flex-shrink:0}
+    .auth-field{display:grid;gap:6px;margin:13px 0}.auth-field label{font-size:12px;font-weight:800;color:#4c4757}
+    .auth-field input{width:100%;padding:12px 13px;border:1px solid #d9d5e0;border-radius:12px;background:white;font-size:16px}
+    .auth-field input:focus{outline:2px solid #ab9af5;border-color:#8a72e0}
+    .auth-primary{width:100%;padding:13px;margin-top:10px}.auth-primary:disabled{opacity:.6;cursor:wait}
+    .auth-links{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:20px}
+    .auth-links button{background:none;border:0;color:#6245da;text-decoration:underline;font-size:12px;font-weight:700;padding:3px 0}
+    .auth-info{padding:12px 14px;background:#f0edfc;border:1px solid #e2dbff;border-radius:12px;color:#463482;font-size:12px;line-height:1.65;margin:12px 0}
+    .auth-error{padding:12px 14px;background:#fff0f1;color:#a02942;border:1px solid #ffd4da;border-radius:12px;font-size:12px;line-height:1.65;margin:12px 0}
+    .auth-account{overflow-wrap:anywhere;border:1px solid #eae7ee;border-radius:14px;padding:16px;font-size:14px}
+    .auth-muted{font-size:12px;color:#756f7d;margin-top:14px;line-height:1.65}
+    .auth-showpass{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#514967;margin-top:2px}
+  `;
+  document.head.append(style);
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const titles = {login:'ログイン', signup:'無料会員登録', forgot:'パスワードを再設定', reset:'新しいパスワード', account:'アカウント'};
+  function updateTrigger() {
+    trigger.textContent = state.user ? 'アカウント' : 'ログイン / 登録';
+    trigger.setAttribute('aria-label', state.user ? 'アカウントを開く' : 'ログインと会員登録');
+  }
+  function alertHTML() {
+    const a = state.error ? `<div class="auth-error" role="alert">${esc(state.error)}</div>` : '';
+    const b = state.message ? `<div class="auth-info" role="status">${esc(state.message)}</div>` : '';
+    return a + b;
+  }
+  function passwordField(label = 'パスワード', id = 'auth-password', minLength = 8) {
+    return `<div class="auth-field"><label for="${id}">${label}</label><input id="${id}" name="password" type="password" autocomplete="${state.view === 'login' ? 'current-password' : 'new-password'}" minlength="${minLength}" required></div>`;
+  }
+  function formHTML() {
+    if (!configured) return `<div class="auth-info">現在、会員登録機能は準備中です。KOENI専用の認証サーバーを接続したあと利用できるようになります。</div><p class="auth-muted">声の検索・試聴・出品デモはこれまでどおり使えます。デモの出品情報はこの端末だけに保存され、アカウントとは同期されません。</p>`;
+    if (!state.ready) return '<div class="auth-info">認証サービスに接続しています…</div>';
+    if (state.view === 'account') {
+      if (!state.user) { state.view = 'login'; return formHTML(); }
+      const email = state.user.email || 'メールアドレス未登録';
+      const displayName = state.user.user_metadata?.display_name || '';
+      return `<div class="auth-account"><strong>${esc(displayName || 'KOENIユーザー')}</strong><p>${esc(email)}</p><span style="color:#32815b;font-size:12px">ログイン中</span></div><p class="auth-muted">現在の出品・募集・お気に入りはデモ用で、このアカウントにはまだ同期されません。</p><button class="btn light auth-primary" type="button" data-auth="logout" ${state.busy?'disabled':''}>ログアウト</button>`;
+    }
+    if (state.view === 'forgot') return `<form id="authForm" data-auth-form="forgot"><div class="auth-field"><label for="auth-email">メールアドレス</label><input id="auth-email" name="email" type="email" autocomplete="email" required maxlength="254"></div><button class="btn primary auth-primary" type="submit" ${state.busy?'disabled':''}>再設定用メールを送信</button></form><p class="auth-muted">登録済みのメールアドレスに再設定手順を送ります。</p>`;
+    if (state.view === 'reset') return `<form id="authForm" data-auth-form="reset">${passwordField('新しいパスワード')}<div class="auth-field"><label for="auth-confirm">新しいパスワード（確認）</label><input id="auth-confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" required></div><button class="btn primary auth-primary" type="submit" ${state.busy?'disabled':''}>パスワードを変更</button></form>`;
+    const signup = state.view === 'signup';
+    return `<form id="authForm" data-auth-form="${signup?'signup':'login'}">
+      ${signup?'<div class="auth-field"><label for="auth-name">表示名（2〜30文字）</label><input id="auth-name" name="displayName" type="text" autocomplete="nickname" minlength="2" maxlength="30" required></div>':''}
+      <div class="auth-field"><label for="auth-email">メールアドレス</label><input id="auth-email" name="email" type="email" autocomplete="email" maxlength="254" required></div>
+      ${passwordField('パスワード（8文字以上）','auth-password',8)}
+      ${signup?'<div class="auth-field"><label for="auth-confirm">パスワード（確認）</label><input id="auth-confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" required></div>':''}
+      <label class="auth-showpass"><input id="auth-visibility" type="checkbox"> パスワードを表示</label>
+      <button class="btn primary auth-primary" type="submit" ${state.busy?'disabled':''}>${signup?'会員登録する':'ログインする'}</button>
+    </form><p class="auth-muted">※ 現在の音声出品・購入画面は取引が発生しないデモです。</p>`;
+  }
+  function linksHTML() {
+    if (!configured || state.view === 'account' || state.view === 'reset') return '';
+    if (state.view === 'login') return '<div class="auth-links"><button data-auth="signup">はじめての方は無料会員登録</button><button data-auth="forgot">パスワードを忘れた方</button></div>';
+    return '<div class="auth-links"><button data-auth="login">ログイン画面へ戻る</button></div>';
+  }
+  function render() {
+    if (!root.dataset.open) return;
+    root.innerHTML = `<div class="auth-backdrop" id="authBackdrop"><section class="auth-panel" role="dialog" aria-modal="true" aria-labelledby="authTitle"><div class="auth-head"><div><h2 id="authTitle">${titles[state.view]}</h2><p>KOENIにようこそ</p></div><button class="auth-close" type="button" data-auth="close" aria-label="閉じる">×</button></div>${alertHTML()}${formHTML()}${linksHTML()}</section></div>`;
+    root.querySelector('input:not([type="checkbox"]),button')?.focus();
+  }
+  function open(view) {
+    if (document.getElementById('modalRoot')?.innerHTML) return; // Keep the existing demo modal undisturbed.
+    state.view = view || (state.user ? 'account' : 'login'); state.error = ''; state.message = '';
+    root.dataset.open = '1'; document.body.style.overflow = 'hidden'; render();
+  }
+  function close() { delete root.dataset.open; root.innerHTML = ''; document.body.style.overflow = ''; trigger.focus(); }
+  function view(v) { state.view = v; state.error = ''; state.message = ''; render(); }
+  function setError(error) {
+    const message = String(error?.message || error || '処理に失敗しました');
+    const map = [
+      [/Invalid login credentials/i,'メールアドレスまたはパスワードが正しくありません。'],
+      [/Email not confirmed/i,'メールの認証が完了していません。確認メールをご確認ください。'],
+      [/User already registered/i,'このメールアドレスは登録済みです。ログインしてください。'],
+      [/Password should be at least|Password is too weak/i,'パスワードの条件を確認してください。'],
+      [/rate limit|too many requests/i,'操作が集中しています。少し時間を空けてからお試しください。'],
+      [/Failed to fetch|NetworkError|Load failed/i,'ネットワークに接続できません。通信状況を確認してください。']
+    ];
+    state.error = map.find(([re]) => re.test(message))?.[1] || '処理できませんでした。入力内容や接続状態を確認してください。';
+  }
+  async function submit(event) {
+    event.preventDefault(); if (!state.client || state.busy) return;
+    const form = event.currentTarget; if (!form.reportValidity()) return;
+    const data = new FormData(form);
+    const kind = form.dataset.authForm;
+    const email = String(data.get('email') || '').trim();
+    const password = String(data.get('password') || '');
+    const confirm = String(data.get('confirm') || '');
+    const displayName = String(data.get('displayName') || '').trim();
+    state.error = ''; state.message = '';
+    if (['signup','reset'].includes(kind) && password !== confirm) { state.error = 'パスワードが一致していません。'; render(); return; }
+    if (['signup','reset'].includes(kind) && password.length < 8) { state.error = 'パスワードは8文字以上にしてください。'; render(); return; }
+    if (kind === 'signup' && (displayName.length < 2 || displayName.length > 30)) { state.error = '表示名は2〜30文字で入力してください。'; render(); return; }
+    state.busy = true; const button = form.querySelector('[type="submit"]'); if (button) {button.disabled=true; button.textContent='処理中…';}
+    try {
+      if (kind === 'signup') {
+        const {data: result,error} = await state.client.auth.signUp({ email, password, options: {data:{display_name:displayName},emailRedirectTo:location.origin+location.pathname} });
+        if (error) throw error;
+        state.message = result.session ? '登録・ログインしました。' : '確認メールを送信しました。メール内のリンクから登録を完了してください。';
+        if (result.session) state.user = result.user;
+      } else if (kind === 'login') {
+        const {data: result,error} = await state.client.auth.signInWithPassword({email,password});
+        if (error) throw error;
+        state.user = result.user; state.view = 'account'; state.message = 'ログインしました。';
+      } else if (kind === 'forgot') {
+        const {error} = await state.client.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+        if (error) throw error;
+        state.message = '送信手続きを受け付けました。登録済みの場合は再設定メールが届きます。';
+      } else if (kind === 'reset') {
+        const {error} = await state.client.auth.updateUser({password});
+        if (error) throw error;
+        state.view = 'account'; state.message = 'パスワードを変更しました。';
+      }
+    } catch(error) { setError(error); }
+    finally { state.busy = false; updateTrigger(); render(); }
+  }
+  async function logout() {
+    if (state.busy || !state.client) return;
+    if (!window.confirm('KOENIからログアウトしますか？')) return;
+    state.busy=true; render();
+    try {
+      const {error} = await state.client.auth.signOut();
+      if (error) throw error;
+      state.user = null; close(); updateTrigger();
+    } catch(error) {setError(error);render();}
+    finally {state.busy=false;}
+  }
+  trigger.addEventListener('click', () => open());
+  root.addEventListener('click', e => {
+    if (e.target.id === 'authBackdrop') { close(); return; }
+    const action = e.target.closest('[data-auth]')?.dataset.auth;
+    if (action === 'close') close();
+    else if (action === 'logout') logout();
+    else if (action && ['login','signup','forgot'].includes(action)) view(action);
+  });
+  root.addEventListener('submit', e => {if (e.target.id === 'authForm') submit(e);});
+  root.addEventListener('change', e => {
+    if (e.target.id === 'auth-visibility') root.querySelectorAll('input[name="password"],input[name="confirm"]').forEach(x => x.type = e.target.checked ? 'text' : 'password');
+  });
+  document.addEventListener('keydown', e => {if (e.key === 'Escape' && root.dataset.open) {e.stopImmediatePropagation(); close();}}, true);
+  updateTrigger();
+  if (!configured) return;
+  (async () => {
+    try {
+      const {createClient} = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+      state.client = createClient(cfg.url, cfg.publishableKey, {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+      state.client.auth.onAuthStateChange((event,session) => {
+        state.user = session?.user || null; updateTrigger();
+        if (event === 'PASSWORD_RECOVERY') {state.view='reset';state.error='';state.message='新しいパスワードを設定してください。';root.dataset.open='1';document.body.style.overflow='hidden';}
+        if (root.dataset.open) render();
+      });
+      const {data,error} = await state.client.auth.getSession();
+      if (error) throw error;
+      state.user = data.session?.user || null;
+    } catch(error) {
+      console.warn('KOENI auth initialization failed',error);
+      state.error='認証サーバーに接続できませんでした。時間をおいて再読み込みしてください。';
+    } finally {state.ready=true;updateTrigger();render();}
+  })();
+})();
+
 </script>
 </body>
 </html>
