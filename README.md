@@ -1,27 +1,38 @@
 # KOENI（コエニ）
 
-声を売る・声を買うマーケットプレイスのプロトタイプ。総合型を目指し、初期はショート動画向けの声から集客する。
+声を売る・声を買う音声マーケットプレイス。総合型として設計し、当面はショート動画制作者への訴求から始める。
 
-## 公開先
-- Web: https://koeni.netlify.app/
-- デプロイ: GitHub `main` → Netlify（接続済み。公開完了はNetlify Deploysで確認）
-- 現状: 声の出品・募集・試聴・購入画面は**デモ**。ユーザー間の売買、課金、音声共有は未実装。
+- 公開先: https://koeni.netlify.app/
+- GitHub main → 既存Netlifyプロジェクトに自動デプロイ
+- 専用Supabase: `tiyyxtbmaxtdsmmrdsjd`（東京リージョン）
 
-## 会員登録（v0.2）
-- 認証: Supabase Auth / メールアドレスとパスワード
-- KOENI専用Supabaseプロジェクト: `tiyyxtbmaxtdsmmrdsjd`（東京）
-- プロフィール: `public.profiles`（認証ユーザー本人のみ読み書き可。登録時に自動作成）
-- ブラウザの `index.html` にSupabaseの公開用URL・publishable keyを設定。**service_role / secret keyを置かないこと。**
-- 確認メール、パスワード再設定、ログアウト確認のUIあり。
+## v0.3：声の公開サンプル
+- ログイン済みの出品者が**最大10MBの試聴用音声**をアップロードし、メタ情報付きで一般公開できる。
+- `public.voice_listings` に商品情報、Supabase Storageの公開バケット `koeni-previews` に音声サンプルを保存。
+- 未ログインの閲覧者も一覧・試聴可能。出品者本人だけが登録・削除できる（RLS・Storage policy）。
+- 自分の公開出品はマイページから削除可能。
+- `index.html` + `cloud.js`。既存の架空デモ商品は「架空の声（デモ）」と区別して表示。
+- `supabase/migrations/20261019_voice_listing_previews.sql` は再現用。**KOENI本番プロジェクトへのMigration適用は完了済み**。
 
-### 管理画面で設定が必要な項目
-1. Supabase Dashboard → KOENI → Authentication → URL Configuration
-   - Site URL = `https://koeni.netlify.app/`
-   - Redirect URLs = `https://koeni.netlify.app/`（正確なURLを許可）
-2. メール認証の本番利用には**カスタムSMTP**が必要。Supabase標準の送信は組織に属するメールのみで、低レート制限がある。
-3. 自分の登録・メール確認・ログイン・再設定・ログアウトを手動で通してから、一般公開。
+**注意：** Storage `koeni-previews` は公開バケット。試聴用サンプルは非ログインユーザーからもアクセスできるので、購入者限定の本編・個人情報・権利を保有しない音声をアップロードしないこと。削除直後もキャッシュで一時的に残る場合がある。
 
-## 注意
-- 現在の声出品・募集・お気に入りは端末のローカルデモデータ。会員アカウントとは同期しない。
-- 決済、商用ライセンス、通報、権利確認、取引メッセージなどは今後実装。
-- Supabase Databaseの変更はSupabaseに適用済み。詳細は対応するSQLマイグレーションを参照。
+## v0.2：認証
+- Supabase Authでメール/パスワードによる登録・ログイン・ログアウトと再設定。
+- `public.profiles` は本人のみアクセス、登録時に自動生成。
+- `index.html` に公開用URLとpublishable keyのみ。**秘密鍵・service_roleは絶対にフロントエンドに置かないこと。**
+- 標準のSupabaseメールを当面使用。独自ドメイン・SMTP・ブランドメールは公開準備段階で導入。
+
+## 現時点で未実装
+- 有料音声の本編ファイルを購入者だけに配布する仕組み
+- 購入・決済・返金・売上支払い
+- オーダーメイドの依頼送信・出品者との取引
+- 募集・お気に入りのサーバー同期
+- 音声の権利確認、通報・管理者承認、年齢/利用規約への同意など本番向け運用
+
+## テスト方法
+1. Netlify DeploysでGitHub `main` の最新commitが`Published`か確認。
+2. KOENIでログインして「声を出品する」を選び、自作の短い音声サンプルを登録する。
+3. シークレットブラウザ/別端末で `https://koeni.netlify.app/` を開き、公開サンプルが一覧に表示され、試聴できるか確認。
+4. ログインしてマイページから該当の公開出品を削除し、再読み込みで消えているか確認。
+
+メールの件名を変えるためのテンプレートは `supabase/email-templates/` に保管（現在未適用）。
