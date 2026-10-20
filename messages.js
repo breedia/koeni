@@ -7,7 +7,7 @@
   const note='<div class="hintbox">メッセージは不正利用の兆候を自動検知し、通報や不正の疑いがある場合に運営が内容を確認することがあります。本人へのなりすまし・無断の声の複製・詐欺は禁止です。自動判定だけでBANはしません。購入・決済はまだ利用できません。</div>';
   async function active(){
     if(!sb()||!who()){auth()?.open?.();return false}
-    const {data,error}=await sb().rpc('koesell_is_banned',{target_id:who().id});
+    const {data,error}=await sb().rpc('koesell_my_ban_status');
     if(error){api().toast('アカウントの状態を確認できません');return false}
     if(data){api().toast('このアカウントは利用停止中です。新規投稿・メッセージ送信はできません');return false}
     return true;
