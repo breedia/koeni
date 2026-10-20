@@ -265,8 +265,14 @@
     const {data,error:fetchError}=await sb.from('voice_listings')
       .select('preview_path').eq('id',id).eq('owner_id',who.id).maybeSingle();
     if(fetchError || !data){api().toast('出品を確認できませんでした');return;}
+    const {data:master,error:masterError}=await sb.from('voice_products').select('master_path').eq('listing_id',id).maybeSingle();
+    if(masterError){api().toast('販売本編を確認できませんでした');return;}
     const {error}=await sb.from('voice_listings').delete().eq('id',id).eq('owner_id',who.id);
-    if(error){api().toast('削除できませんでした');return;}
+    if(error){api().toast('購入履歴に関連する出品は削除できません。運営に連絡してください');return;}
+    if(master?.master_path){
+      const removed=await sb.storage.from('koesell-masters').remove([master.master_path]);
+      if(removed.error)console.warn('KOESELL master cleanup failed',removed.error);
+    }
     if(data.preview_path) {
       const result=await sb.storage.from(BUCKET).remove([data.preview_path]);
       if(result.error) console.warn('KOENI preview cleanup failed',result.error);
