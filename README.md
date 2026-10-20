@@ -28,7 +28,7 @@
 - https://koeni.pages.dev/admin.html を追加。管理者だけがチャットの不審フラグ、メッセージ・出品通報、BAN中アカウントを閲覧。
 - BAN・解除・出品の緊急非公開をブラウザから実行可能（サーバー側の権限チェック必須）。
 - 通報・検知結果には「確認済み」操作を設け、未対応一覧から外せる。対応記録は内部テーブルに残る。
-- 管理者は非公開スキーマ koesell_private.operators に登録する。**管理者が現在0人のため、利用を始めるには本人の確認済みアカウントを一度だけ登録する必要がある。**
+- 管理者は非公開スキーマ `koesell_private.operators` に登録済み（2026-10-21時点で1アカウント、サーバー権限チェック済み）。
 - セットアップ・権限付与・運用手順: [supabase/admin-dashboard-v06.md](supabase/admin-dashboard-v06.md)。
 - DB: [supabase/migrations/20261021_operator_dashboard_v06.sql](supabase/migrations/20261021_operator_dashboard_v06.sql)（既に本番DB適用済み）。
 
@@ -57,3 +57,10 @@
 - HTMLに設置しているのは公開用publishable keyのみ。**service_roleなどの秘密鍵をGitHub・ブラウザコード・チャットへ貼らないこと。**
 - Supabase Security Advisorは漏洩パスワード保護が未有効のWARNを表示している。正式公開前にAuth設定を確認。
 - `koeni` が含まれるGitHubリポジトリ名・URL・DBバケット名は旧名の内部識別子として維持。名称変更だけのための破壊的移行はしない。
+
+## 認証メールのリダイレクト（要Dashboard設定）
+
+- 登録確認とパスワード再設定は `https://koeni.pages.dev/` を `emailRedirectTo`/`redirectTo` として明示する。
+- **Supabase Auth → URL Configuration のSite URLとRedirect URLsを別途更新する必要がある**。設定はコードやSQLのマイグレーションでは変更されない。
+- 必須: Site URL `https://koeni.pages.dev/`、Redirect URLsにも `https://koeni.pages.dev/` を登録。旧Netlifyは必要に応じて維持。
+- 管理者のときだけマイページとアカウント画面に運営管理リンクを出す。権限チェックは `admin-access.js` → RPC `koesell_admin_access`（サーバー側で保護）。
