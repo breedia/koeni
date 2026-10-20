@@ -32,10 +32,19 @@
 - セットアップ・権限付与・運用手順: [supabase/admin-dashboard-v06.md](supabase/admin-dashboard-v06.md)。
 - DB: [supabase/migrations/20261021_operator_dashboard_v06.sql](supabase/migrations/20261021_operator_dashboard_v06.sql)（既に本番DB適用済み）。
 
+## v0.7 有料販売の土台（決済は無効）
+
+- [COMMERCE_LAUNCH.md](COMMERCE_LAUNCH.md) を参照。無料先行公開ではなく、有料の正式公開を目指す。
+- `voice_products`、`voice_orders`、非公開Storage `koesell-masters` を追加。
+- マイページの「販売本編を登録」「購入・販売履歴」を追加。
+- Stripe Checkout準備、署名付きWebhook、購入者だけの有料本編ダウンロードをSupabase Edge Functionsにデプロイ。
+- `payments_enabled=false`、`platform_fee_bps=null` で本番決済は完全に無効。Stripe Connect・KYC・手数料・返金運用が整うまで変更しない。
+- 現在の実際の注文数は0件。決済／Webhook／ダウンロードの一連の実機テストは未完了。
+
 ## 試作・未対応事項
 
 - トップに並ぶ「架空の声（デモ）」は合成読み上げで、実際の売り手ではない。
-- 購入・決済・納品・収録依頼・募集は未実装またはデモのみ。架空商品のお気に入りは端末内のみ。
+- 既製音声の決済・本編納品はサーバー処理を構築したが**Stripe未接続・売上分配未設定のため利用停止中**。オーダー収録の受注・納品と募集はまだデモのみ。
 - 出品者本人確認、音声の権利検証、AI合成判定、通報の自動通知・運営画面の未対応案件通知、異議申し立て、より強いレート制限、販売本編の安全な納品、規約・法務審査は未実装。
 - **即時公開は稼働状態でも、規約・個人情報保護・運営監視体制が整うまで本格募集は開始しないこと**。
 - サンプルの公開後、悪意ある第三者の保存・音声クローンを完全に防ぐことはできない。
