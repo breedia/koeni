@@ -403,7 +403,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     const name = String(who.user_metadata?.display_name || 'KOENIユーザー').slice(0,30);
     const options = ['ショート動画','ナレーション','セリフ・演技','ホラー・怪談','朗読','ASMR・癒し','ゲーム・TRPG','広告・企業']
       .map(x=>'<option>'+esc(x)+'</option>').join('');
-    api().openModal('音声サンプルを公開出品（v0.3.2）', '<div class="hintbox"><b>公開テスト機能</b>：商品情報と試聴用音声は、ログインしていない人にも公開されます。販売・決済・受注・本編音声の納品はまだできません。<b>自分が権利を持つサンプルだけ</b>を登録してください。</div>'+
+    api().openModal('音声サンプルを公開出品（v0.3.3）', '<div class="hintbox"><b>公開テスト機能</b>：商品情報と試聴用音声は、ログインしていない人にも公開されます。販売・決済・受注・本編音声の納品はまだできません。<b>自分が権利を持つサンプルだけ</b>を登録してください。</div>'+
       '<form id="cloudSellForm">'+
       '<div class="form-grid"><div class="field"><label>出品者名*</label><input name="seller" maxlength="30" minlength="2" required value="'+esc(name)+'"></div>'+
       '<div class="field"><label>カテゴリー*</label><select name="category" required>'+options+'</select></div></div>'+
