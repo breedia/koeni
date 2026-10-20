@@ -68,7 +68,7 @@
     startBtn.addEventListener('click',async()=>{
       if(recordState.recorder?.state==='recording')return;
       if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-        statusText('このブラウザでは録音できません。SafariでKOENIを直接開いてください。');
+        statusText('このブラウザでは録音できません。SafariでKOESELLを直接開いてください。');
         return;
       }
       startBtn.disabled=true;statusText('マイクの使用許可を確認しています…');
@@ -106,7 +106,7 @@
         releaseStream();startBtn.disabled=false;stopBtn.disabled=true;
         statusText(err?.name==='NotAllowedError'
           ?'マイクへのアクセスが許可されていません。Safariでマイクを許可してください。'
-          :'録音を開始できませんでした。SafariでKOENIを直接開いてみてください。');
+          :'録音を開始できませんでした。SafariでKOESELLを直接開いてみてください。');
       }
     });
     stopBtn.addEventListener('click',stop);
@@ -133,7 +133,7 @@
       return;
     }
     const who = user();
-    const name = String(who.user_metadata?.display_name || 'KOENIユーザー').slice(0,30);
+    const name = String(who.user_metadata?.display_name || 'KOESELLユーザー').slice(0,30);
     const options = ['ショート動画','ナレーション','セリフ・演技','ホラー・怪談','朗読','ASMR・癒し','ゲーム・TRPG','広告・企業']
       .map(x=>'<option>'+esc(x)+'</option>').join('');
     api().openModal('音声サンプルを公開出品（v0.3.2）', '<div class="hintbox"><b>公開テスト機能</b>：商品情報と試聴用音声は、ログインしていない人にも公開されます。販売・決済・受注・本編音声の納品はまだできません。<b>自分が権利を持つサンプルだけ</b>を登録してください。</div>'+
