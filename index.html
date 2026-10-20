@@ -403,7 +403,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     const name = String(who.user_metadata?.display_name || 'KOESELLユーザー').slice(0,30);
     const options = ['ショート動画','ナレーション','セリフ・演技','ホラー・怪談','朗読','ASMR・癒し','ゲーム・TRPG','広告・企業']
       .map(x=>'<option>'+esc(x)+'</option>').join('');
-    api().openModal('音声サンプルを公開出品（v0.3.3）', '<div class="hintbox"><b>公開テスト機能</b>：商品情報と試聴用音声は、ログインしていない人にも公開されます。販売・決済・受注・本編音声の納品はまだできません。<b>自分が権利を持つサンプルだけ</b>を登録してください。</div>'+
+    api().openModal('音声サンプルを公開出品（v0.3.3）', '<div class="hintbox"><b>公開テスト機能</b>：商品情報と試聴用音声は、ログインしていない人にも公開されます。<b>公開した声は第三者に保存・複製され、AI音声の作成などに悪用されるおそれがあります。</b>安全性を保証できないため、本番用の声や個人情報を含む音声は登録しないでください。販売・決済・受注・本編音声の納品はまだできません。</div>'+
       '<form id="cloudSellForm">'+
       '<div class="form-grid"><div class="field"><label>出品者名*</label><input name="seller" maxlength="30" minlength="2" required value="'+esc(name)+'"></div>'+
       '<div class="field"><label>カテゴリー*</label><select name="category" required>'+options+'</select></div></div>'+
@@ -416,7 +416,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
       '<div class="field"><label>① サイト上で録音する（iPhone対応）</label><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button id="koeniRecordStart" type="button" class="btn light sm">● 録音開始</button><button id="koeniRecordStop" type="button" class="btn light sm" disabled>■ 録音停止</button></div><p class="help" id="koeniRecordStatus" role="status">マイクを許可すると、最大60秒の音声を直接録音できます。</p><audio id="koeniRecordPreview" controls hidden style="width:100%;margin:8px 0"></audio></div>'+
       '<div class="field"><label>② または音声ファイルを選ぶ（最大10MB）</label><input name="preview" id="cloudAudio" type="file" accept=".m4a,.mp3,.wav,.ogg,.webm,.aac,.flac,.3gp,.3g2"><div class="help">iPhoneボイスメモのM4Aにも対応。①と②のどちらか一方でOK。選べない場合はSafariで直接開いてください。アップロードした音声は一般公開されます。</div></div>'+
       '<div class="field"><label>説明・試聴用文章（任意）</label><textarea name="sampleText" maxlength="350" placeholder="声の雰囲気や読み上げる文章など"></textarea></div>'+
-      '<label class="check"><input type="checkbox" name="rights" required><span>音声と台本の利用権を保有し、他人の声を無断収録・模倣したものや権利侵害する音声ではありません。一般公開されることを理解しました。</span></label>'+
+      '<label class="check"><input type="checkbox" name="rights" required><span>自分が権利を持つ音声と台本のみ使用し、他人の声の無断収録・AI複製・本人を欺くなりすましには使用しません。公開音声は第三者による保存や声の複製を完全に防げないことを理解しました。</span></label>'+
       '<button type="submit" class="btn primary" style="width:100%">試聴用音声を公開する</button></form>',true);
     const form = document.getElementById('cloudSellForm');
     if(form){const recordState=setupRecording(form);form.addEventListener('submit',e=>saveNew(e,recordState));}
