@@ -62,7 +62,7 @@
       '<div class="field"><label>声の特徴*</label><input name="tag" minlength="1" maxlength="35" required placeholder="例：落ち着いた低音"></div>'+
       '<div class="field"><label>長さ・収録条件</label><input name="duration" maxlength="30" placeholder="例：20秒 / 100字まで"></div>'+
       '<div class="field"><label>利用許諾（正式な販売契約ではありません）*</label><select name="license"><option>個人利用のみ</option><option>商用利用可（SNS動画）</option><option>商用利用可（広告・企業利用含む）</option><option>用途によって要相談</option></select></div>'+
-      '<div class="field"><label>公開する試聴用音声（必須・最大10MB）*</label><input name="preview" id="cloudAudio" type="file" accept=".mp3,.m4a,.wav,.ogg,.webm,.aac,.flac,.3gp,.3g2,audio/*" required><div class="help">スマホで録った短いサンプルを推奨。アップロードしたファイルは一般公開されます。販売する本編を登録しないでください。</div></div>'+
+      '<div class="field"><label>公開する試聴用音声（必須・最大10MB）*</label><input name="preview" id="cloudAudio" type="file" required><div class="help">iPhoneのボイスメモ（.m4a）にも対応。ファイル選択後に形式・容量を確認します。アップロードした音声は一般公開されるため、販売する本編は登録しないでください。</div></div>'+
       '<div class="field"><label>説明・試聴用文章（任意）</label><textarea name="sampleText" maxlength="350" placeholder="声の雰囲気や読み上げる文章など"></textarea></div>'+
       '<label class="check"><input type="checkbox" name="rights" required><span>音声と台本の利用権を保有し、他人の声を無断収録・模倣したものや権利侵害する音声ではありません。一般公開されることを理解しました。</span></label>'+
       '<button type="submit" class="btn primary" style="width:100%">試聴用音声を公開する</button></form>',true);
@@ -80,7 +80,7 @@
     const ext=(file?.name?.split('.').pop() || '').toLowerCase();
     const mime=acceptable[ext];
     if (!file || !mime || file.size>MB || file.size===0) {
-      api().toast('音声形式（MP3/M4A/WAVなど）・10MB以内で選択してください');
+      api().toast('対応形式（M4A・MP3・WAVなど）とファイル容量10MB以内を確認してください');
       return;
     }
     const title=String(fd.get('title')||'').trim();
