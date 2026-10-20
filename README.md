@@ -58,9 +58,13 @@
 - Supabase Security Advisorは漏洩パスワード保護が未有効のWARNを表示している。正式公開前にAuth設定を確認。
 - `koeni` が含まれるGitHubリポジトリ名・URL・DBバケット名は旧名の内部識別子として維持。名称変更だけのための破壊的移行はしない。
 
-## 認証メールのリダイレクト（要Dashboard設定）
+## 認証メールのリダイレクト（2026-10-21 ユーザー設定完了の報告あり）
 
 - 登録確認とパスワード再設定は `https://koeni.pages.dev/` を `emailRedirectTo`/`redirectTo` として明示する。
-- **Supabase Auth → URL Configuration のSite URLとRedirect URLsを別途更新する必要がある**。設定はコードやSQLのマイグレーションでは変更されない。
+- Supabase Auth → URL ConfigurationのSite URLとRedirect URLsは、ユーザーが更新完了を報告済み。新規に発行するメールのリンクで実動作を確認する必要がある。
 - 必須: Site URL `https://koeni.pages.dev/`、Redirect URLsにも `https://koeni.pages.dev/` を登録。旧Netlifyは必要に応じて維持。
 - 管理者のときだけマイページとアカウント画面に運営管理リンクを出す。権限チェックは `admin-access.js` → RPC `koesell_admin_access`（サーバー側で保護）。
+
+## 安全ガイド
+- 公開ページ: [safety.html](safety.html)。音声の無断複製や詐欺の防止、メッセージの自動検知と運営確認、通報方法を案内する。
+- トップページのフッターからリンク済み。これは運用ガイドであり、正式な利用規約・プライバシーポリシーの代替ではない。
