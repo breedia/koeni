@@ -118,10 +118,36 @@
     const {data,error}=await db().from('voice_products')
       .select('listing_id').eq('listing_id',listingId).maybeSingle();
     if(error){api().toast('販売状況を取得できませんでした');return}
-    api().openModal('購入について',
-      '<div class="hintbox"><b>決済準備中</b>：現在、Stripe Connectによる出品者への支払い・返金・本番決済を実装しています。まだ代金の請求は発生しません。</div>'+
-      '<p>'+(data?'販売本編は登録済みです。決済の準備が整い次第、購入できるようになります。':'この出品の販売本編はまだ登録されていません。')+'</p>'+
-      '<p class="muted">サイト外で直接お金を振り込むよう求められた場合は応じないでください。</p>');
+    if(!data){
+      api().openModal('販売準備中',
+        '<div class="hintbox">この出品の販売本編はまだ登録されていません。出品者が本編を登録するまで購入できません。</div>');
+      return;
+    }
+    api().openModal('Stripeで安全に購入',
+      '<div class="hintbox"><b>現在は決済接続・テスト中です。</b> 有料取引を開始するまで決済は無効です。有効化後はStripeの決済ページへ進み、支払完了をサーバーで確認した場合だけ音声を受け取れます。</div>'+
+      '<p class="muted">Stripeの決済ページ以外での銀行振込、LINEへの誘導などは応じないでください。</p>'+
+      '<label class="check"><input id="salesBuyConsent" type="checkbox"><span>音声の利用範囲を確認しました。なりすまし・再販売・無断AI複製には利用しません。</span></label>'+
+      '<button id="salesStartCheckout" type="button" class="btn primary" style="width:100%">決済の利用可否を確認する</button>');
+    document.getElementById('salesStartCheckout')?.addEventListener('click',async()=>{
+      if(!document.getElementById('salesBuyConsent')?.checked){
+        api().toast('利用条件を確認してください');return;
+      }
+      const button=document.getElementById('salesStartCheckout');
+      button.disabled=true;button.textContent='Stripeへ接続しています…';
+      try{
+        const {data:result,error:callError}=await db().functions.invoke('koesell-checkout',{
+          body:{listingId}
+        });
+        if(callError||!result?.url)throw callError||Error('checkout_disabled');
+        const url=new URL(result.url);
+        if(url.protocol!=='https:'||url.hostname!=='checkout.stripe.com')throw Error('unexpected_checkout_url');
+        window.location.assign(result.url);
+      }catch(err){
+        console.warn('KOESELL checkout not ready',err);
+        api().toast('現在は決済準備中です。まだ代金は請求されません');
+        if(button.isConnected){button.disabled=false;button.textContent='決済の利用可否を確認する';}
+      }
+    });
   }
   window.KOESELL_SALES={uploadMaster,openOrders,checkout};
 })();
