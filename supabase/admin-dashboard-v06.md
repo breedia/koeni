@@ -6,6 +6,9 @@
 
 ## 1. 最初の管理者登録（一度だけ）
 
+2026-10-21に管理者アカウント1件を登録済み。通常は次のSQLを再実行する必要はない。追加登録が必要な場合だけ用いる。
+
+
 Supabase Dashboard > SQL Editor で、本人がKOESELLへログインしているメールアドレスに置き換えて実行する。
 
     insert into koesell_private.operators (user_id)
