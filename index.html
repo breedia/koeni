@@ -444,12 +444,13 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     return recordState;
   }
 
-  function openSell() {
+  async function openSell() {
     if (!client() || !user()) {
       api()?.toast('公開出品にはログインが必要です');
       auth()?.open?.();
       return;
     }
+    if(window.KOESELL_MESSAGES && !await window.KOESELL_MESSAGES.active())return;
     const who = user();
     const name = String(who.user_metadata?.display_name || 'KOESELLユーザー').slice(0,30);
     const options = ['ショート動画','ナレーション','セリフ・演技','ホラー・怪談','朗読','ASMR・癒し','ゲーム・TRPG','広告・企業']
