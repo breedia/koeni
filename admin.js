@@ -32,15 +32,18 @@ async function load(){
   render(d.message_reports,'messageReports','msgReportCount',m=>
     card(m.body,'メッセージ通報 | '+m.reason+' | '+fmt(m.created_at)+' | 通報内容: '+(m.details||'なし'),
       btn('ban',m.sender_id,'送信者をBAN','danger')+
+      btn('review-message_report',m.id,'確認済みにする','light')+
       '<span class="code">送信者: '+esc(m.sender_id)+'</span>'),'メッセージへの通報はありません');
   render(d.flagged_messages,'flaggedMessages','flagCount',m=>
     card(m.body,'自動検知 | '+m.safety_flag+' | '+fmt(m.created_at),
       btn('ban',m.sender_id,'送信者をBAN','danger')+
+      btn('review-flag',m.id,'確認済みにする','light')+
       '<span class="code">送信者: '+esc(m.sender_id)+'</span>'),'不審なメッセージはまだ検知されていません');
   render(d.listing_reports,'listingReports','listingReportCount',m=>
     card(m.title,'出品通報 | '+m.reason+' | '+fmt(m.created_at)+' | 内容: '+(m.details||'なし'),
       btn('hide',m.listing_id,'この出品を非公開にする','secondary')+
-      btn('ban',m.owner_id,'出品者をBAN','danger')),'出品への通報はありません');
+      btn('ban',m.owner_id,'出品者をBAN','danger')+
+      btn('review-listing_report',m.id,'確認済みにする','light')),'出品への通報はありません');
   render(d.active_bans,'bans','banCount',m=>
     card(m.reason,'利用停止中 | '+fmt(m.banned_at)+' | '+m.user_id,
       btn('unban',m.user_id,'BAN解除','light')),'現在BANされているアカウントはありません');
@@ -60,6 +63,11 @@ async function runOp(op,id){
  }else if(op==='unban'){
   if(!window.confirm('BANを解除しますか？ 公開出品が再び表示される可能性があります。'))return;
   rpc='koesell_admin_unban';args={target:id};
+ }else if(op.startsWith('review-')){
+  const kind=op.slice(7);
+  if(!['flag','message_report','listing_report'].includes(kind))return;
+  if(!window.confirm('確認済みとして処理しますか？ 以後、未対応一覧には表示されません。'))return;
+  rpc='koesell_admin_review';args={kind,target:id};
  }else if(op==='hide'){
   if(!window.confirm('この出品を一般公開から除外しますか？'))return;
   rpc='koesell_admin_hide_listing';args={target:id};
