@@ -276,6 +276,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     '3gp':'audio/3gpp', '3g2':'audio/3gpp2'
   };
   let generation = 0;
+  let favoriteGeneration = 0;
   const api = () => window.KOENI_DEMO_API;
   const auth = () => window.KOENI_AUTH;
   const client = () => auth()?.getClient?.();
@@ -314,7 +315,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     }
     if(seq!==generation)return;
     const who=user();
-    if(!who){api().setMyListings([]);return;}
+    if(!who){api().setMyListings([]);await loadFavorites();return;}
     try{
       const {data,error}=await sb.from('voice_listings').select(fields)
         .eq('owner_id',who.id).order('created_at',{ascending:false}).limit(100);
@@ -323,6 +324,40 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     }catch(e){
       console.warn('KOESELL my submissions refresh failed',e);
       if(seq===generation)api().toast('自分の申請一覧を取得できませんでした');
+    }
+    if(seq===generation)await loadFavorites();
+  }
+
+
+  async function loadFavorites() {
+    const sb=client(),who=user(),seq=++favoriteGeneration;
+    if(!sb || !who){api()?.setCloudFavoriteIds([]);return;}
+    try{
+      const {data,error}=await sb.from('voice_favorites').select('listing_id')
+        .eq('user_id',who.id).limit(1000);
+      if(error)throw error;
+      if(seq===favoriteGeneration && user()?.id===who.id)
+        api()?.setCloudFavoriteIds((data||[]).map(x=>x.listing_id));
+    }catch(e){
+      console.warn('KOESELL favorite load failed',e);
+      api()?.toast('お気に入りを同期できませんでした');
+    }
+  }
+  async function toggleFavorite(id,add) {
+    const sb=client(),who=user();
+    if(!who || !sb){api()?.toast('お気に入りの同期にはログインが必要です');auth()?.open?.();return;}
+    try{
+      let result;
+      if(add) result=await sb.from('voice_favorites')
+        .upsert({user_id:who.id,listing_id:id},{onConflict:'user_id,listing_id',ignoreDuplicates:true});
+      else result=await sb.from('voice_favorites')
+        .delete().eq('user_id',who.id).eq('listing_id',id);
+      if(result.error)throw result.error;
+      await loadFavorites();
+      api()?.toast(add?'お気に入りに追加しました':'お気に入りを解除しました');
+    }catch(e){
+      console.warn('KOESELL favorite update failed',e);
+      api()?.toast('お気に入りを更新できませんでした');
     }
   }
 
@@ -541,7 +576,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
       api().toast('通報を受け付けました');
     });
   }
-  window.KOENI_CLOUD = {openSell,deleteVoice,signedPreviewUrl,refresh,reportVoice};
+  window.KOENI_CLOUD = {openSell,deleteVoice,signedPreviewUrl,refresh,reportVoice,toggleFavorite};
   window.addEventListener('koeni:auth-ready',refresh);
   window.addEventListener('koeni:auth-state',refresh);
   if(client()) refresh();
