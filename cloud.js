@@ -1,4 +1,4 @@
-/* KOESELL v0.4: review-gated voice submissions with private previews. */
+/* KOESELL v0.5: instant-publication previews, server-enforced bans. */
 (() => {
   'use strict';
   const BUCKET = 'koeni-previews';
@@ -187,7 +187,7 @@
     const name = String(who.user_metadata?.display_name || 'KOESELLユーザー').slice(0,30);
     const options = ['ショート動画','ナレーション','セリフ・演技','ホラー・怪談','朗読','ASMR・癒し','ゲーム・TRPG','広告・企業']
       .map(x=>'<option>'+esc(x)+'</option>').join('');
-    api().openModal('音声サンプルを審査に提出（v0.4）', '<div class="hintbox"><b>審査制のテスト機能</b>：音声と商品情報は運営による承認まで非公開です。承認後は誰でも試聴でき、保存・AI複製される危険を完全には防げません。個人情報・他人の声・販売用の本編は提出しないでください。決済・受注・納品はまだできません。</div>'+
+    api().openModal('声を出品する（v0.5）', '<div class="hintbox"><b>出品すると即時公開されます。</b> 声を第三者に保存・AI複製される危険を完全には防げません。本人以外の声や個人情報、販売用の本編は投稿しないでください。なりすまし・詐欺・無断AI複製は利用停止の対象です。売買・決済・納品はまだテスト段階です。</div>'+
       '<form id="cloudSellForm">'+
       '<div class="form-grid"><div class="field"><label>出品者名*</label><input name="seller" maxlength="30" minlength="2" required value="'+esc(name)+'"></div>'+
       '<div class="field"><label>カテゴリー*</label><select name="category" required>'+options+'</select></div></div>'+
@@ -198,10 +198,10 @@
       '<div class="field"><label>長さ・収録条件</label><input name="duration" maxlength="30" placeholder="例：20秒 / 100字まで"></div>'+
       '<div class="field"><label>利用許諾（正式な販売契約ではありません）*</label><select name="license"><option>個人利用のみ</option><option>商用利用可（SNS動画）</option><option>商用利用可（広告・企業利用含む）</option><option>用途によって要相談</option></select></div>'+
       '<div class="field"><label>① サイト上で録音する（iPhone対応）</label><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button id="koeniRecordStart" type="button" class="btn light sm">● 録音開始</button><button id="koeniRecordStop" type="button" class="btn light sm" disabled>■ 録音停止</button></div><p class="help" id="koeniRecordStatus" role="status">マイクを許可すると、最大60秒の音声を直接録音できます。</p><audio id="koeniRecordPreview" controls hidden style="width:100%;margin:8px 0"></audio></div>'+
-      '<div class="field"><label>② または音声ファイルを選ぶ（最大10MB）</label><input name="preview" id="cloudAudio" type="file" accept=".m4a,.mp3,.wav,.ogg,.webm,.aac,.flac,.3gp,.3g2"><div class="help">iPhoneボイスメモのM4Aにも対応。①と②のどちらか一方でOK。提出した音声は承認まで非公開、承認後は一般公開されます。</div></div>'+
+      '<div class="field"><label>② または音声ファイルを選ぶ（最大10MB）</label><input name="preview" id="cloudAudio" type="file" accept=".m4a,.mp3,.wav,.ogg,.webm,.aac,.flac,.3gp,.3g2"><div class="help">iPhoneボイスメモのM4Aにも対応。①と②のどちらか一方でOK。登録後は誰でも試聴できます。第三者による音声の複製を完全には防げません。</div></div>'+
       '<div class="field"><label>説明・試聴用文章（任意）</label><textarea name="sampleText" maxlength="350" placeholder="声の雰囲気や読み上げる文章など"></textarea></div>'+
-      '<label class="check"><input type="checkbox" name="rights" required><span>自分が権利を保有する音声・台本だけを提出し、無断AI複製・本人になりすます音声を販売しません。審査後に公開される場合、音声の複製を完全には防げないことを理解しました。</span></label>'+
-      '<button type="submit" class="btn primary" style="width:100%">音声を審査に提出する</button></form>',true);
+      '<label class="check"><input type="checkbox" name="rights" required><span>自分が権利を保有する声と台本だけを出品し、他人へのなりすまし・詐欺・無断AI複製に利用しません。出品と同時に試聴用音声が一般公開されることを理解しました。</span></label>'+
+      '<button type="submit" class="btn primary" style="width:100%">音声サンプルを公開する</button></form>',true);
     const form = document.getElementById('cloudSellForm');
     if(form){const recordState=setupRecording(form);form.addEventListener('submit',e=>saveNew(e,recordState));}
   }
@@ -230,7 +230,7 @@
       api().toast('必須項目を確認してください');return;
     }
     const button=form.querySelector('[type="submit"]');
-    button.disabled=true;button.textContent='審査へ提出しています…';
+    button.disabled=true;button.textContent='公開しています…';
     const path=who.id+'/'+crypto.randomUUID()+'.'+ext;
     let uploaded=false;
     try {
@@ -242,25 +242,25 @@
         listing_type:String(fd.get('listingType')||''), price_yen:price,
         voice_tag:tag, duration_label:String(fd.get('duration')||'').trim()||'要相談',
         usage_license:String(fd.get('license')||''), sample_text:String(fd.get('sampleText')||'').trim(),
-        preview_path:path
+        preview_path:path,review_status:'approved',is_published:true
       };
       const {error}=await sb.from('voice_listings').insert(listing);
       if (error) throw error;
       api().closeModal();
       await refresh();
       api().showMyListings();
-      api().toast('審査申請を受け付けました。承認までは一般公開されません');
+      api().toast('音声を公開しました。売買・決済はまだデモです');
     } catch(err) {
       console.error('KOENI cloud listing failed',err);
       if(uploaded) await sb.storage.from(BUCKET).remove([path]);
-      api().toast('審査申請できませんでした。通信状況・ファイル形式を確認してください');
-      button.disabled=false;button.textContent='音声を審査に提出する';
+      api().toast('出品できませんでした。通信状況・ファイル形式を確認してください');
+      button.disabled=false;button.textContent='音声サンプルを公開する';
     }
   }
   async function deleteVoice(id) {
     const sb=client(),who=user();
     if (!sb || !who) {auth()?.open?.();return;}
-    if (!confirm('この出品申請を削除しますか？ 音声ファイルも削除されます。')) return;
+    if (!confirm('この出品を削除しますか？ 音声ファイルも削除されます。')) return;
     const {data,error:fetchError}=await sb.from('voice_listings')
       .select('preview_path').eq('id',id).eq('owner_id',who.id).maybeSingle();
     if(fetchError || !data){api().toast('出品を確認できませんでした');return;}
