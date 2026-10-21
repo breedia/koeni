@@ -9,6 +9,17 @@
   const MASTERS = 'koesell-masters';
   const MB = 25 * 1024 * 1024;
   const accept = {mp3:'audio/mpeg',m4a:'audio/mp4',wav:'audio/wav',ogg:'audio/ogg',webm:'audio/webm',aac:'audio/aac',flac:'audio/flac'};
+  async function r2Ready(){
+    try{
+      const r=await fetch('/api/audio?op=status',{cache:'no-store'});
+      return r.ok&&(await r.json()).ready===true;
+    }catch{return false}
+  }
+  async function accessToken(){
+    const {data}=await db().auth.getSession();
+    if(!data.session?.access_token)throw new Error('Login expired');
+    return data.session.access_token;
+  }
   function loggedIn(){
     if(db() && me())return true;
     api()?.toast('ログインしてください');
@@ -53,23 +64,39 @@
       }
       button.disabled=true;button.textContent='非公開でアップロード中…';
       const path=uid+'/'+listingId+'/'+crypto.randomUUID()+'.'+ext;
-      let uploaded=false;
+      let uploaded=false,store='supabase';
       try{
-        const storage=await db().storage.from(MASTERS)
-          .upload(path,file,{contentType:mime,upsert:false,cacheControl:'0'});
-        if(storage.error)throw storage.error;
-        uploaded=true;
-        const {error:insertError}=await db().from('voice_products').insert({
-          listing_id:listingId,owner_id:uid,master_path:path,
-          original_filename:String(file.name).slice(0,120),file_size_bytes:file.size
-        });
-        if(insertError)throw insertError;
+        if(await r2Ready()){
+          const result=await fetch('/api/audio?op=upload-master&listingId='+encodeURIComponent(listingId),{
+            method:'POST',headers:{
+              Authorization:'Bearer '+await accessToken(),
+              'Content-Type':mime,'x-file-extension':ext,
+              'x-original-filename':encodeURIComponent(file.name.slice(0,120))
+            },body:file
+          });
+          if(!result.ok)throw new Error('R2 master upload failed '+result.status);
+          const payload=await result.json();
+          if(payload.storage!=='r2'||!payload.path)throw new Error('Invalid R2 response');
+          uploaded=true;store='r2';
+          // Cloudflare server registers the master product only after R2 upload succeeds.
+        }else{
+          const storage=await db().storage.from(MASTERS)
+            .upload(path,file,{contentType:mime,upsert:false,cacheControl:'0'});
+          if(storage.error)throw storage.error;
+          uploaded=true;
+          const {error:insertError}=await db().from('voice_products').insert({
+            listing_id:listingId,owner_id:uid,master_path:path,
+            original_filename:String(file.name).slice(0,120),file_size_bytes:file.size,
+            storage_backend:'supabase'
+          });
+          if(insertError)throw insertError;
+        }
         api().closeModal();
         api().toast('販売本編を非公開で登録しました。決済接続までは販売されません');
         api().showMyListings();
       }catch(err){
         console.warn('KOESELL master upload',err);
-        if(uploaded)await db().storage.from(MASTERS).remove([path]);
+        if(uploaded&&store==='supabase')await db().storage.from(MASTERS).remove([path]);
         api().toast('登録できませんでした。通信状況や重複登録を確認してください');
         button.disabled=false;button.textContent='非公開で本編を登録する';
       }
@@ -78,7 +105,7 @@
   async function openOrders(){
     if(!loggedIn())return;
     const {data,error}=await db().from('voice_orders')
-      .select('id,listing_id,buyer_id,seller_id,status,amount_yen,purchase_license,created_at,paid_at')
+      .select('id,listing_id,buyer_id,seller_id,status,amount_yen,purchase_license,storage_backend,created_at,paid_at')
       .order('created_at',{ascending:false}).limit(60);
     if(error){console.warn('KOESELL orders load',error);api().toast('購入履歴を取得できませんでした');return}
     const owned=(data||[]).filter(o=>o.buyer_id===me().id);
@@ -89,24 +116,40 @@
       '<span class="pill">'+esc(labels[o.status]||o.status)+'</span></div>'+
       '<p>'+esc(o.purchase_license)+'</p>'+
       (o.buyer_id===me().id&&o.status==='paid'?
-        '<button type="button" class="btn primary sm" data-download-order="'+esc(o.id)+'">購入済み音声を受け取る</button>':'')+
+        '<button type="button" class="btn primary sm" data-download-order="'+esc(o.id)+'" data-storage-backend="'+esc(o.storage_backend||'supabase')+'">購入済み音声を受け取る</button>':'')+
       '</div>';
     api().openModal('購入・販売履歴',
       '<div class="hintbox">本物の決済履歴だけを表示します。試作版の購入デモは含まれません。支払済みの音声だけダウンロードできます。</div>'+
       '<h3>自分の購入</h3>'+(owned.length?owned.map(item).join(''):'<p class="muted">購入履歴はありません。</p>')+
       '<h3 style="margin-top:20px">自分の販売</h3>'+(sales.length?sales.map(item).join(''):'<p class="muted">販売履歴はありません。</p>'),true);
-    document.querySelectorAll('[data-download-order]').forEach(b=>b.addEventListener('click',()=>download(b.dataset.downloadOrder)));
+    document.querySelectorAll('[data-download-order]').forEach(b=>b.addEventListener('click',()=>download(b.dataset.downloadOrder,b.dataset.storageBackend)));
   }
-  async function download(orderId){
+  async function download(orderId,storage='supabase'){
     if(!loggedIn())return;
     const button=document.querySelector('[data-download-order="'+CSS.escape(orderId)+'"]');
     if(button){button.disabled=true;button.textContent='確認中…'}
     try{
-      const {data,error}=await db().functions.invoke('koesell-delivery',{body:{orderId}});
-      if(error||!data?.url)throw error||Error(data?.error||'download_unavailable');
-      api().openModal('購入済み音声の受け取り',
-        '<div class="hintbox">購入を確認しました。安全のためダウンロードリンクは60秒で期限が切れます。期限が切れた場合は購入履歴から再発行できます。</div>'+
-        '<p><a class="btn primary" target="_blank" rel="noopener noreferrer" href="'+esc(data.url)+'">音声ファイルを開く・保存する →</a></p>',true);
+      let fileUrl;
+      if(storage==='r2'){
+        const response=await fetch('/api/audio?op=master&orderId='+encodeURIComponent(orderId),{
+          headers:{Authorization:'Bearer '+await accessToken()},cache:'no-store'
+        });
+        if(!response.ok)throw new Error('R2 paid download failed '+response.status);
+        const file=await response.blob();
+        if(!file.size)throw new Error('Empty paid download');
+        fileUrl=URL.createObjectURL(file);
+        // Browser memory links do not grant any access to the private R2 bucket.
+        setTimeout(()=>URL.revokeObjectURL(fileUrl),120000);
+        api().openModal('購入済み音声の受け取り',
+          '<div class="hintbox">支払いを確認しました。音声はこの端末に一時的に読み込まれています。次のボタンから保存してください。</div>'+
+          '<p><a class="btn primary" download="koesell-purchased-audio" href="'+esc(fileUrl)+'">音声ファイルを保存する →</a></p>',true);
+      }else{
+        const {data,error}=await db().functions.invoke('koesell-delivery',{body:{orderId}});
+        if(error||!data?.url)throw error||Error(data?.error||'download_unavailable');
+        api().openModal('購入済み音声の受け取り',
+          '<div class="hintbox">購入を確認しました。安全のためダウンロードリンクは60秒で期限が切れます。</div>'+
+          '<p><a class="btn primary" target="_blank" rel="noopener noreferrer" href="'+esc(data.url)+'">音声ファイルを開く・保存する →</a></p>',true);
+      }
     }catch(err){
       console.warn('KOESELL delivery',err);
       api().toast('購入状態を確認できませんでした。再ログイン後にお試しください');
