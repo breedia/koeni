@@ -76,6 +76,7 @@ Deno.serve(async (req:Request)=>{
       id:orderId,buyer_id:session.user.id,seller_id:product.seller_id,
       listing_id:product.listing_id,amount_yen:price,platform_fee_yen:fee,
       purchased_master_path:product.master_path,purchase_license:product.license,
+      storage_backend:product.storage_backend||'supabase',
       stripe_connected_account_id:product.stripe_account,status:"pending"
     };
     const inserted=await db.from("voice_orders").insert(orderRecord);
