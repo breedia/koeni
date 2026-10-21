@@ -54,7 +54,7 @@ for(let w=1;w<=3;w++){const root=document.querySelector(`[data-wave="${w}"]`);fo
 function openModal(title,html,wide=false){el('modalRoot').innerHTML=`<div class="modal-shell" id="modalOverlay"><div class="modal ${wide?'modal-wide':''}" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-head"><h2>${esc(title)}</h2><button class="x" data-action="close" aria-label="閉じる">×</button></div><div class="modal-content">${html}</div></div></div>`;document.body.style.overflow='hidden';el('modalOverlay').addEventListener('click',e=>{if(e.target.id==='modalOverlay')closeModal()});el('modalRoot').querySelector('input:not([type=checkbox]),textarea,button')?.focus()}
 function closeModal(){el('modalRoot').innerHTML='';document.body.style.overflow='';stopPlay()}
 let currentAudio=null,ttsUtter=null,playingId=null;function stopPlay(){if(currentAudio){currentAudio.pause();currentAudio=null}try{window.speechSynthesis?.cancel()}catch(e){}playingId=null;document.querySelectorAll('[data-play]').forEach(b=>{b.textContent='▶ '+(b.dataset.play.startsWith('d')?'デモ試聴':'試聴');b.classList.remove('on')})}
-async function playVoice(voiceId){const v=allVoices().find(x=>x.id===voiceId);if(!v)return;if(playingId===voiceId){stopPlay();return}stopPlay();playingId=voiceId;document.querySelectorAll(`[data-play="${CSS.escape(voiceId)}"]`).forEach(b=>{b.textContent='■ 停止';b.classList.add('on')});if(v.cloud){let url='';try{url=await window.KOENI_CLOUD.signedPreviewUrl(v.previewPath);if(playingId!==voiceId)return;currentAudio=new Audio(url);currentAudio.onended=()=>stopPlay();currentAudio.onerror=()=>{stopPlay();toast('音声を再生できませんでした')};await currentAudio.play()}catch(e){console.warn('KOESELL preview play failed',e);if(playingId===voiceId){stopPlay();if(url && e?.name==='NotAllowedError'){openModal('音声を試聴',`<p class="muted">iPhoneで自動再生が制限されました。下の再生ボタンを押してください。</p><audio controls preload="none" style="width:100%" src="${esc(url)}"></audio>`)}else toast('試聴できませんでした。通信状況を確認してください')}}return}if(v.audio){const file=await readFile(voiceId);if(playingId!==voiceId)return;if(!file){stopPlay();toast('保存された音声が見つかりません。再度アップロードしてください');return}const url=URL.createObjectURL(file);currentAudio=new Audio(url);currentAudio.onended=()=>{URL.revokeObjectURL(url);stopPlay()};currentAudio.onerror=()=>{URL.revokeObjectURL(url);stopPlay();toast('音声を再生できませんでした')};try{await currentAudio.play()}catch(e){URL.revokeObjectURL(url);stopPlay();toast('再生できませんでした。ブラウザの設定を確認してください')}return}
+async function playVoice(voiceId){const v=allVoices().find(x=>x.id===voiceId);if(!v)return;if(playingId===voiceId){stopPlay();return}stopPlay();playingId=voiceId;document.querySelectorAll(`[data-play="${CSS.escape(voiceId)}"]`).forEach(b=>{b.textContent='■ 停止';b.classList.add('on')});if(v.cloud){let url='';try{url=await window.KOENI_CLOUD.signedPreviewUrl(v.previewPath,v.previewStorage);if(playingId!==voiceId)return;currentAudio=new Audio(url);currentAudio.onended=()=>stopPlay();currentAudio.onerror=()=>{stopPlay();toast('音声を再生できませんでした')};await currentAudio.play()}catch(e){console.warn('KOESELL preview play failed',e);if(playingId===voiceId){stopPlay();if(url && e?.name==='NotAllowedError'){openModal('音声を試聴',`<p class="muted">iPhoneで自動再生が制限されました。下の再生ボタンを押してください。</p><audio controls preload="none" style="width:100%" src="${esc(url)}"></audio>`)}else toast('試聴できませんでした。通信状況を確認してください')}}return}if(v.audio){const file=await readFile(voiceId);if(playingId!==voiceId)return;if(!file){stopPlay();toast('保存された音声が見つかりません。再度アップロードしてください');return}const url=URL.createObjectURL(file);currentAudio=new Audio(url);currentAudio.onended=()=>{URL.revokeObjectURL(url);stopPlay()};currentAudio.onerror=()=>{URL.revokeObjectURL(url);stopPlay();toast('音声を再生できませんでした')};try{await currentAudio.play()}catch(e){URL.revokeObjectURL(url);stopPlay();toast('再生できませんでした。ブラウザの設定を確認してください')}return}
 if(!window.speechSynthesis){stopPlay();toast('このブラウザは音声読み上げに非対応です');return}try{const utt=new SpeechSynthesisUtterance(v.text||v.title);utt.lang='ja-JP';utt.rate=.92;utt.pitch=v.cat==='ショート動画'?1.14:.93;const list=speechSynthesis.getVoices();const jp=list.find(x=>x.lang.toLowerCase().startsWith('ja'));if(jp)utt.voice=jp;utt.onend=()=>{if(playingId===voiceId)stopPlay()};utt.onerror=()=>{if(playingId===voiceId){stopPlay();toast('読み上げ音声を利用できませんでした')}};ttsUtter=utt;speechSynthesis.speak(utt)}catch(e){stopPlay();toast('端末で読み上げを利用できませんでした')}}
 function detail(voiceId){const v=allVoices().find(x=>x.id===voiceId);if(!v)return;const isDemo=!v.cloud&&v.id.startsWith('d');openModal('声の詳細',`<div class="preview-voice"><div class="pill" style="display:inline-block;background:#fff;margin-bottom:10px">${esc(v.cat)}</div><h3>${esc(v.title)}</h3><p>${esc(v.seller)} さんが出品 · ${esc(v.tag)}</p></div><div class="feature-list"><span>${v.type==='stock'?'既製音声':'オーダー収録'}</span><span>${esc(v.duration)}</span><span>${esc(v.license||'用途は要相談')}</span></div><p class="muted">${isDemo?'音声サンプルは端末の合成読み上げです。実際の売り手は存在しません。':'出品時に登録された音声を試聴できます。'}</p><button class="btn light" data-play="${esc(v.id)}">▶ ${isDemo?'デモ試聴':'サンプルを試聴'}</button><div class="detail-price"><div><div class="muted">${v.type==='stock'?'音声1点の参考価格':'収録依頼の参考価格'}</div><b>${yen(v.price)}</b></div><div class="muted">デモにつき決済は行いません</div></div><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn primary" data-${v.type==='stock'?'checkout':'order'}="${esc(v.id)}">${v.type==='stock'?(v.cloud?'購入する（準備中）':'購入手順を試す →'):'この声で収録を依頼 →'}</button><button class="btn light" data-fav="${esc(v.id)}">${state.favorites.includes(v.id)?'♥ お気に入り解除':'♡ お気に入り保存'}</button>${v.cloud?'<button class="btn light" data-chat="'+esc(v.id)+'">出品者に相談</button><button class="btn light" data-report="'+esc(v.id)+'">問題を通報</button>':''}</div><p class="policy">利用範囲・二次配布・AI学習等の禁止事項は、正式サービスでは商品ごとに契約条件を表示する予定です。</p>`)}
 const CATEGORY_OPTIONS=CATS.slice(1).map(c=>`<option>${esc(c)}</option>`).join('');function sell(){if(window.KOENI_CLOUD){window.KOENI_CLOUD.openSell();return}toast('出品機能がまだ読み込まれていません。ページを再読み込みしてください');return;openModal('声を出品する（デモ）',`<div class="hintbox">登録情報とアップロードした音声は、この端末のブラウザ内だけに保存されます。公開・販売はされません。実名や機密情報は入力しないでください。</div><form id="sellForm"><div class="form-grid"><div class="field"><label for="seller">出品者名（ニックネーム）*</label><input name="seller" id="seller" maxlength="30" placeholder="例：はる" required></div><div class="field"><label for="cat">カテゴリー*</label><select name="cat" id="cat" required>${CATEGORY_OPTIONS}</select></div></div><div class="field"><label for="voiceTitle">商品タイトル*</label><input name="title" id="voiceTitle" maxlength="75" placeholder="例：静かな低音で怪談を朗読します" required></div><div class="form-grid"><div class="field"><label for="voiceType">販売形式*</label><select name="type" id="voiceType"><option value="stock">既製音声を販売</option><option value="custom">オーダー収録を受け付ける</option></select></div><div class="field"><label for="price">参考価格（円）*</label><input type="number" name="price" id="price" min="100" max="100000" step="100" value="500" required></div></div><div class="field"><label for="tag">声の特徴*</label><input name="tag" id="tag" maxlength="35" placeholder="例：かすれ声・落ち着いた女性声" required></div><div class="field"><label for="duration">長さ・収録条件</label><input name="duration" id="duration" maxlength="30" placeholder="例：30秒 / 100字まで"></div><div class="field"><label for="license">利用許諾の設定*</label><select name="license" id="license"><option>個人利用のみ</option><option>商用利用可（SNS動画）</option><option>商用利用可（広告・企業利用含む）</option><option>用途によって要相談</option></select></div><div class="field"><label for="audioFile">音声サンプル（音声ファイル / 任意）</label><input type="file" name="audio" id="audioFile"><div class="help">MP3・M4A・WAVなど、10MBまで推奨。保存はこの端末のみ。アップロードする音声の権利を持っている場合だけ登録してください。</div></div><div class="field"><label for="sampleText">読み上げデモ用の文章（サンプル未登録時）</label><textarea name="text" id="sampleText" maxlength="350" placeholder="音声ファイルがない場合、この文章を端末の合成音声で読み上げます。"></textarea></div><label class="check"><input type="checkbox" name="rights" required><span>自分が利用権を持つ音声・台本のみ登録し、他者の声を無断で複製・模倣した音声は出品しません。</span></label><button type="submit" class="btn primary" style="width:100%">ローカルに出品デモを保存する</button></form>`,true);el('sellForm').addEventListener('submit',saveListing)}
@@ -285,8 +285,25 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
   const user = () => auth()?.getUser?.();
   const esc = s => String(s ?? '').replace(/[&<>"']/g, ch =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  async function signedPreviewUrl(path) {
+  const r2Exts = new Set(['mp3','m4a','wav','ogg','webm','aac','flac']);
+  async function r2Ready() {
+    try {
+      const r=await fetch('/api/audio?op=status',{cache:'no-store'});
+      return r.ok && (await r.json()).ready===true;
+    }catch {return false;}
+  }
+  async function r2Request(op,path,method='DELETE') {
+    const {data}=await client().auth.getSession();
+    if(!data.session?.access_token)throw new Error('ログインを確認できません');
+    const r=await fetch('/api/audio?op='+encodeURIComponent(op)+'&path='+encodeURIComponent(path),{
+      method,headers:{Authorization:'Bearer '+data.session.access_token}
+    });
+    if(!r.ok)throw new Error('R2 audio request failed '+r.status);
+    return r;
+  }
+  async function signedPreviewUrl(path,storage='supabase') {
     if (!path || !client()) throw new Error('音声の保存先が見つかりません');
+    if(storage==='r2')return '/api/audio?op=preview&path='+encodeURIComponent(path);
     const {data,error}=await client().storage.from(BUCKET).createSignedUrl(path,180);
     if(error || !data?.signedUrl) throw error || new Error('試聴のアクセス許可を取得できません');
     return data.signedUrl;
@@ -294,7 +311,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
   const mapRow = row => ({
     id:row.id, ownerId:row.owner_id, cloud:true, audio:!!row.preview_path,
     reviewStatus:row.review_status, isPublished:row.is_published,
-    previewPath:row.preview_path, title:row.title, seller:row.seller_name,
+    previewPath:row.preview_path, previewStorage:row.preview_storage||'supabase', title:row.title, seller:row.seller_name,
     cat:row.category, type:row.listing_type, price:row.price_yen,
     tag:row.voice_tag, duration:row.duration_label,
     license:row.usage_license, text:row.sample_text || '',
@@ -304,7 +321,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     const sb=client();
     if(!sb || !api())return;
     const seq=++generation;
-    const fields='id,owner_id,seller_name,title,category,listing_type,price_yen,voice_tag,duration_label,usage_license,sample_text,preview_path,created_at,review_status,is_published';
+    const fields='id,owner_id,seller_name,title,category,listing_type,price_yen,voice_tag,duration_label,usage_license,sample_text,preview_path,preview_storage,created_at,review_status,is_published';
     try {
       const {data,error}=await sb.from('voice_listings').select(fields)
         .eq('is_published',true).eq('review_status','approved')
@@ -502,17 +519,32 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     const button=form.querySelector('[type="submit"]');
     button.disabled=true;button.textContent='公開しています…';
     const path=who.id+'/'+crypto.randomUUID()+'.'+ext;
-    let uploaded=false;
+    let uploaded=false,storage='supabase',filePath=path;
     try {
-      const upload=await sb.storage.from(BUCKET).upload(path,file,{contentType:mime,upsert:false,cacheControl:'3600'});
-      if (upload.error) throw upload.error;
+      if(r2Exts.has(ext) && await r2Ready()){
+        const {data:session}=await sb.auth.getSession();
+        if(!session.session?.access_token)throw new Error('Session expired');
+        const response=await fetch('/api/audio?op=upload-preview',{
+          method:'POST',headers:{
+            Authorization:'Bearer '+session.session.access_token,
+            'Content-Type':mime,'x-file-extension':ext
+          },body:file
+        });
+        if(!response.ok)throw new Error('R2 preview upload failed '+response.status);
+        const payload=await response.json();
+        if(payload.storage!=='r2'||!payload.path)throw new Error('Invalid R2 response');
+        filePath=payload.path;storage='r2';
+      }else{
+        const upload=await sb.storage.from(BUCKET).upload(path,file,{contentType:mime,upsert:false,cacheControl:'3600'});
+        if(upload.error)throw upload.error;
+      }
       uploaded=true;
       const listing={
         owner_id:who.id, seller_name:seller, title, category:String(fd.get('category')||''),
         listing_type:String(fd.get('listingType')||''), price_yen:price,
         voice_tag:tag, duration_label:String(fd.get('duration')||'').trim()||'要相談',
         usage_license:String(fd.get('license')||''), sample_text:String(fd.get('sampleText')||'').trim(),
-        preview_path:path,review_status:'approved',is_published:true
+        preview_path:filePath,preview_storage:storage,review_status:'approved',is_published:true
       };
       const {error}=await sb.from('voice_listings').insert(listing);
       if (error) throw error;
@@ -522,7 +554,12 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
       api().toast('音声を公開しました。売買・決済はまだデモです');
     } catch(err) {
       console.error('KOENI cloud listing failed',err);
-      if(uploaded) await sb.storage.from(BUCKET).remove([path]);
+      if(uploaded){
+        try{
+          if(storage==='r2')await r2Request('preview',filePath);
+          else await sb.storage.from(BUCKET).remove([path]);
+        }catch(cleanupError){console.warn('Preview cleanup',cleanupError)}
+      }
       api().toast('出品できませんでした。通信状況・ファイル形式を確認してください');
       button.disabled=false;button.textContent='音声サンプルを公開する';
     }
@@ -532,19 +569,29 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     if (!sb || !who) {auth()?.open?.();return;}
     if (!confirm('この出品を削除しますか？ 音声ファイルも削除されます。')) return;
     const {data,error:fetchError}=await sb.from('voice_listings')
-      .select('preview_path').eq('id',id).eq('owner_id',who.id).maybeSingle();
+      .select('preview_path,preview_storage').eq('id',id).eq('owner_id',who.id).maybeSingle();
     if(fetchError || !data){api().toast('出品を確認できませんでした');return;}
-    const {data:master,error:masterError}=await sb.from('voice_products').select('master_path').eq('listing_id',id).maybeSingle();
+    const {data:master,error:masterError}=await sb.from('voice_products').select('master_path,storage_backend').eq('listing_id',id).maybeSingle();
     if(masterError){api().toast('販売本編を確認できませんでした');return;}
     const {error}=await sb.from('voice_listings').delete().eq('id',id).eq('owner_id',who.id);
     if(error){api().toast('購入履歴に関連する出品は削除できません。運営に連絡してください');return;}
     if(master?.master_path){
-      const removed=await sb.storage.from('koesell-masters').remove([master.master_path]);
-      if(removed.error)console.warn('KOESELL master cleanup failed',removed.error);
+      try{
+        if(master.storage_backend==='r2')await r2Request('master',master.master_path);
+        else {
+          const removed=await sb.storage.from('koesell-masters').remove([master.master_path]);
+          if(removed.error)console.warn('Master cleanup failed',removed.error);
+        }
+      }catch(cleanupError){console.warn('KOESELL master cleanup failed',cleanupError)}
     }
-    if(data.preview_path) {
-      const result=await sb.storage.from(BUCKET).remove([data.preview_path]);
-      if(result.error) console.warn('KOENI preview cleanup failed',result.error);
+    if(data.preview_path){
+      try{
+        if(data.preview_storage==='r2')await r2Request('preview',data.preview_path);
+        else {
+          const result=await sb.storage.from(BUCKET).remove([data.preview_path]);
+          if(result.error)console.warn('Preview cleanup failed',result.error);
+        }
+      }catch(cleanupError){console.warn('KOESELL preview cleanup failed',cleanupError)}
     }
     await refresh();
     api().showMyListings();
