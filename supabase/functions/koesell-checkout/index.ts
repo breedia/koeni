@@ -85,7 +85,8 @@ Deno.serve(async (req:Request)=>{
       [key:string]:string
     }={
       mode:"payment",
-      "payment_method_types[0]":"card",
+      // Stripe determines eligible methods from Dashboard, currency, account and Connect capabilities.
+      // PayPay must NOT be advertised until Stripe approves Connect use for this platform.
       "line_items[0][quantity]":"1",
       "line_items[0][price_data][currency]":"jpy",
       "line_items[0][price_data][unit_amount]":String(price),
