@@ -16,8 +16,25 @@
   const user = () => auth()?.getUser?.();
   const esc = s => String(s ?? '').replace(/[&<>"']/g, ch =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  async function signedPreviewUrl(path) {
+  const r2Exts = new Set(['mp3','m4a','wav','ogg','webm','aac','flac']);
+  async function r2Ready() {
+    try {
+      const r=await fetch('/api/audio?op=status',{cache:'no-store'});
+      return r.ok && (await r.json()).ready===true;
+    }catch {return false;}
+  }
+  async function r2Request(op,path,method='DELETE') {
+    const {data}=await client().auth.getSession();
+    if(!data.session?.access_token)throw new Error('ログインを確認できません');
+    const r=await fetch('/api/audio?op='+encodeURIComponent(op)+'&path='+encodeURIComponent(path),{
+      method,headers:{Authorization:'Bearer '+data.session.access_token}
+    });
+    if(!r.ok)throw new Error('R2 audio request failed '+r.status);
+    return r;
+  }
+  async function signedPreviewUrl(path,storage='supabase') {
     if (!path || !client()) throw new Error('音声の保存先が見つかりません');
+    if(storage==='r2')return '/api/audio?op=preview&path='+encodeURIComponent(path);
     const {data,error}=await client().storage.from(BUCKET).createSignedUrl(path,180);
     if(error || !data?.signedUrl) throw error || new Error('試聴のアクセス許可を取得できません');
     return data.signedUrl;
@@ -25,7 +42,7 @@
   const mapRow = row => ({
     id:row.id, ownerId:row.owner_id, cloud:true, audio:!!row.preview_path,
     reviewStatus:row.review_status, isPublished:row.is_published,
-    previewPath:row.preview_path, title:row.title, seller:row.seller_name,
+    previewPath:row.preview_path, previewStorage:row.preview_storage||'supabase', title:row.title, seller:row.seller_name,
     cat:row.category, type:row.listing_type, price:row.price_yen,
     tag:row.voice_tag, duration:row.duration_label,
     license:row.usage_license, text:row.sample_text || '',
@@ -35,7 +52,7 @@
     const sb=client();
     if(!sb || !api())return;
     const seq=++generation;
-    const fields='id,owner_id,seller_name,title,category,listing_type,price_yen,voice_tag,duration_label,usage_license,sample_text,preview_path,created_at,review_status,is_published';
+    const fields='id,owner_id,seller_name,title,category,listing_type,price_yen,voice_tag,duration_label,usage_license,sample_text,preview_path,preview_storage,created_at,review_status,is_published';
     try {
       const {data,error}=await sb.from('voice_listings').select(fields)
         .eq('is_published',true).eq('review_status','approved')
@@ -233,17 +250,32 @@
     const button=form.querySelector('[type="submit"]');
     button.disabled=true;button.textContent='公開しています…';
     const path=who.id+'/'+crypto.randomUUID()+'.'+ext;
-    let uploaded=false;
+    let uploaded=false,storage='supabase',filePath=path;
     try {
-      const upload=await sb.storage.from(BUCKET).upload(path,file,{contentType:mime,upsert:false,cacheControl:'3600'});
-      if (upload.error) throw upload.error;
+      if(r2Exts.has(ext) && await r2Ready()){
+        const {data:session}=await sb.auth.getSession();
+        if(!session.session?.access_token)throw new Error('Session expired');
+        const response=await fetch('/api/audio?op=upload-preview',{
+          method:'POST',headers:{
+            Authorization:'Bearer '+session.session.access_token,
+            'Content-Type':mime,'x-file-extension':ext
+          },body:file
+        });
+        if(!response.ok)throw new Error('R2 preview upload failed '+response.status);
+        const payload=await response.json();
+        if(payload.storage!=='r2'||!payload.path)throw new Error('Invalid R2 response');
+        filePath=payload.path;storage='r2';
+      }else{
+        const upload=await sb.storage.from(BUCKET).upload(path,file,{contentType:mime,upsert:false,cacheControl:'3600'});
+        if(upload.error)throw upload.error;
+      }
       uploaded=true;
       const listing={
         owner_id:who.id, seller_name:seller, title, category:String(fd.get('category')||''),
         listing_type:String(fd.get('listingType')||''), price_yen:price,
         voice_tag:tag, duration_label:String(fd.get('duration')||'').trim()||'要相談',
         usage_license:String(fd.get('license')||''), sample_text:String(fd.get('sampleText')||'').trim(),
-        preview_path:path,review_status:'approved',is_published:true
+        preview_path:filePath,preview_storage:storage,review_status:'approved',is_published:true
       };
       const {error}=await sb.from('voice_listings').insert(listing);
       if (error) throw error;
@@ -253,7 +285,12 @@
       api().toast('音声を公開しました。売買・決済はまだデモです');
     } catch(err) {
       console.error('KOENI cloud listing failed',err);
-      if(uploaded) await sb.storage.from(BUCKET).remove([path]);
+      if(uploaded){
+        try{
+          if(storage==='r2')await r2Request('preview',filePath);
+          else await sb.storage.from(BUCKET).remove([path]);
+        }catch(cleanupError){console.warn('Preview cleanup',cleanupError)}
+      }
       api().toast('出品できませんでした。通信状況・ファイル形式を確認してください');
       button.disabled=false;button.textContent='音声サンプルを公開する';
     }
@@ -263,19 +300,29 @@
     if (!sb || !who) {auth()?.open?.();return;}
     if (!confirm('この出品を削除しますか？ 音声ファイルも削除されます。')) return;
     const {data,error:fetchError}=await sb.from('voice_listings')
-      .select('preview_path').eq('id',id).eq('owner_id',who.id).maybeSingle();
+      .select('preview_path,preview_storage').eq('id',id).eq('owner_id',who.id).maybeSingle();
     if(fetchError || !data){api().toast('出品を確認できませんでした');return;}
-    const {data:master,error:masterError}=await sb.from('voice_products').select('master_path').eq('listing_id',id).maybeSingle();
+    const {data:master,error:masterError}=await sb.from('voice_products').select('master_path,storage_backend').eq('listing_id',id).maybeSingle();
     if(masterError){api().toast('販売本編を確認できませんでした');return;}
     const {error}=await sb.from('voice_listings').delete().eq('id',id).eq('owner_id',who.id);
     if(error){api().toast('購入履歴に関連する出品は削除できません。運営に連絡してください');return;}
     if(master?.master_path){
-      const removed=await sb.storage.from('koesell-masters').remove([master.master_path]);
-      if(removed.error)console.warn('KOESELL master cleanup failed',removed.error);
+      try{
+        if(master.storage_backend==='r2')await r2Request('master',master.master_path);
+        else {
+          const removed=await sb.storage.from('koesell-masters').remove([master.master_path]);
+          if(removed.error)console.warn('Master cleanup failed',removed.error);
+        }
+      }catch(cleanupError){console.warn('KOESELL master cleanup failed',cleanupError)}
     }
-    if(data.preview_path) {
-      const result=await sb.storage.from(BUCKET).remove([data.preview_path]);
-      if(result.error) console.warn('KOENI preview cleanup failed',result.error);
+    if(data.preview_path){
+      try{
+        if(data.preview_storage==='r2')await r2Request('preview',data.preview_path);
+        else {
+          const result=await sb.storage.from(BUCKET).remove([data.preview_path]);
+          if(result.error)console.warn('Preview cleanup failed',result.error);
+        }
+      }catch(cleanupError){console.warn('KOESELL preview cleanup failed',cleanupError)}
     }
     await refresh();
     api().showMyListings();
