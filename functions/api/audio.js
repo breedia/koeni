@@ -40,7 +40,7 @@ async function supaInsert(table,data,secret){
   });
   if(!response.ok)throw new Error('database_write_failed_'+response.status);
 }
-async function authUser(request){
+async function authUser(request,secret){
   const match=request.headers.get('authorization')?.match(/^Bearer (.+)$/i);
   if(!match)return null;
   const jwt=match[1];
@@ -51,7 +51,7 @@ async function authUser(request){
   const data=await result.json();
   if(!UUID.test(data.id||''))return null;
   const ban=await supa('account_bans',
-    'select=user_id&user_id=eq.'+safeQuery(data.id)+'&lifted_at=is.null',{secret:request._koesellSecret});
+    'select=user_id&user_id=eq.'+safeQuery(data.id)+'&lifted_at=is.null',{secret});
   return ban.length?null:{user:data,jwt};
 }
 async function readAudio(bucket,key,request,master){
@@ -88,7 +88,6 @@ export async function onRequest({request,env}){
   if(request.method!=='GET' && request.headers.get('origin')!==url.origin)
     return error('origin_not_allowed',403);
   // The service-role key never leaves this Function or Cloudflare's encrypted Secrets.
-  request._koesellSecret=env.SUPABASE_SERVICE_ROLE_KEY;
   try{
     const bucket=env.KOESELL_AUDIO;
     if(request.method==='GET'&&op==='preview'){
@@ -103,7 +102,7 @@ export async function onRequest({request,env}){
     if(request.method==='GET'&&op==='master'){
       const orderId=url.searchParams.get('orderId')||'';
       if(!UUID.test(orderId))return error('invalid_order',400);
-      const who=await authUser(request);
+      const who=await authUser(request,env.SUPABASE_SERVICE_ROLE_KEY);
       if(!who)return error('login_required',401);
       const orders=await supa('voice_orders',
         'select=id,buyer_id,status,purchased_master_path,storage_backend'+
@@ -114,7 +113,7 @@ export async function onRequest({request,env}){
       return readAudio(bucket,'masters/'+orders[0].purchased_master_path,request,true);
     }
     if(request.method==='POST'&&['upload-preview','upload-master'].includes(op)){
-      const who=await authUser(request);
+      const who=await authUser(request,env.SUPABASE_SERVICE_ROLE_KEY);
       if(!who)return error('login_required',401);
       const {ext,mime}=mimeOf(request);
       if(!mime)return error('unsupported_audio_format',415);
@@ -166,7 +165,7 @@ export async function onRequest({request,env}){
       }
     }
     if(request.method==='DELETE'&&['preview','master'].includes(op)){
-      const who=await authUser(request);
+      const who=await authUser(request,env.SUPABASE_SERVICE_ROLE_KEY);
       if(!who)return error('login_required',401);
       const path=url.searchParams.get('path')||'';
       const valid=op==='preview'?PREVIEW_PATH.test(path):MASTER_PATH.test(path);
