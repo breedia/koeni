@@ -22,9 +22,9 @@
 
 ## 3. サーバー専用の秘密鍵
 1. Supabase Dashboard → KOESELL project → API Keys。
-2. Legacy service_role JWTをコピー。高権限の秘密鍵なのでチャットやGitHubへ送らない。
+2. 「Publishable and secret API keys」から sb_secret_ で始まる秘密鍵をコピー。高権限なのでチャットやGitHubへ送らない。
 3. Cloudflare Pages → Settings → Variables and Secrets → Add。
-4. 名前 SUPABASE_SERVICE_ROLE_KEY、値はコピーした秘密鍵。
+4. 名前 SUPABASE_SECRET_KEY、値はコピーした sb_secret_ の秘密鍵。
 5. Encrypted SecretとしてProductionへ保存して再デプロイ。
 6. https://koeni.pages.dev/api/audio?op=status を開き、ready:trueなら切替可能。ready:falseなら旧保存先のまま。
 
