@@ -1,5 +1,5 @@
 /* KOESELL v0.8 — Cloudflare Pages Function with a private R2 binding.
-   Disabled by design until KOESELL_AUDIO binding and SUPABASE_SERVICE_ROLE_KEY secret are configured.
+   Disabled by design until KOESELL_AUDIO binding and SUPABASE_SECRET_KEY encrypted secret are configured.
    Never expose R2 bucket public URL, service credentials, or unprotected master-audio keys.
 */
 const SUPABASE_URL = 'https://tiyyxtbmaxtdsmmrdsjd.supabase.co';
@@ -17,7 +17,11 @@ const error = (code,status) => new Response(JSON.stringify({error:code}),{
 const json = (value,status=200) => new Response(JSON.stringify(value),{
   status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}
 });
-const active = (env) => Boolean(env.KOESELL_AUDIO && env.SUPABASE_SERVICE_ROLE_KEY);
+const serverSecret = (env) => env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
+const active = (env) => Boolean(env.KOESELL_AUDIO && serverSecret(env));
+const privilegedHeaders = (secret) => secret.startsWith('eyJ')
+  ? {apikey:secret,Authorization:'Bearer '+secret}
+  : {apikey:secret};
 const safeQuery = (value) => encodeURIComponent(value);
 function mimeOf(request){
   const ext=request.headers.get('x-file-extension')?.toLowerCase()||'';
@@ -26,7 +30,7 @@ function mimeOf(request){
 async function supa(table,params,{jwt,secret}={}){
   const headers={apikey:PUBLIC_KEY};
   if(jwt)headers.Authorization='Bearer '+jwt;
-  if(secret){headers.apikey=secret;headers.Authorization='Bearer '+secret;}
+  if(secret)Object.assign(headers,privilegedHeaders(secret));
   const response=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+params,{headers});
   if(!response.ok)throw new Error('database_query_failed_'+response.status);
   return response.json();
@@ -34,7 +38,7 @@ async function supa(table,params,{jwt,secret}={}){
 async function supaInsert(table,data,secret){
   const response=await fetch(SUPABASE_URL+'/rest/v1/'+table,{
     method:'POST',
-    headers:{apikey:secret,Authorization:'Bearer '+secret,
+    headers:{...privilegedHeaders(secret),
       'Content-Type':'application/json',Prefer:'return=minimal'},
     body:JSON.stringify(data)
   });
@@ -102,7 +106,7 @@ export async function onRequest({request,env}){
     if(request.method==='GET'&&op==='master'){
       const orderId=url.searchParams.get('orderId')||'';
       if(!UUID.test(orderId))return error('invalid_order',400);
-      const who=await authUser(request,env.SUPABASE_SERVICE_ROLE_KEY);
+      const who=await authUser(request,serverSecret(env));
       if(!who)return error('login_required',401);
       const orders=await supa('voice_orders',
         'select=id,buyer_id,status,purchased_master_path,storage_backend'+
@@ -113,7 +117,7 @@ export async function onRequest({request,env}){
       return readAudio(bucket,'masters/'+orders[0].purchased_master_path,request,true);
     }
     if(request.method==='POST'&&['upload-preview','upload-master'].includes(op)){
-      const who=await authUser(request,env.SUPABASE_SERVICE_ROLE_KEY);
+      const who=await authUser(request,serverSecret(env));
       if(!who)return error('login_required',401);
       const {ext,mime}=mimeOf(request);
       if(!mime)return error('unsupported_audio_format',415);
@@ -157,7 +161,7 @@ export async function onRequest({request,env}){
           listing_id:url.searchParams.get('listingId'),owner_id:who.user.id,
           master_path:path,original_filename:filename,file_size_bytes:data.byteLength,
           storage_backend:'r2'
-        },env.SUPABASE_SERVICE_ROLE_KEY);
+        },serverSecret(env));
         return json({path,storage:'r2'});
       }catch(e){
         await bucket.delete(key);
@@ -165,7 +169,7 @@ export async function onRequest({request,env}){
       }
     }
     if(request.method==='DELETE'&&['preview','master'].includes(op)){
-      const who=await authUser(request,env.SUPABASE_SERVICE_ROLE_KEY);
+      const who=await authUser(request,serverSecret(env));
       if(!who)return error('login_required',401);
       const path=url.searchParams.get('path')||'';
       const valid=op==='preview'?PREVIEW_PATH.test(path):MASTER_PATH.test(path);
@@ -173,11 +177,11 @@ export async function onRequest({request,env}){
       if(op==='master'){
         const product=await supa('voice_products',
           'select=listing_id&master_path=eq.'+safeQuery(path)+'&limit=1',
-          {secret:env.SUPABASE_SERVICE_ROLE_KEY});
+          {secret:serverSecret(env)});
         if(product.length)return error('master_still_registered',409);
         const orders=await supa('voice_orders',
           'select=id&purchased_master_path=eq.'+safeQuery(path)+'&limit=1',
-          {secret:env.SUPABASE_SERVICE_ROLE_KEY});
+          {secret:serverSecret(env)});
         if(orders.length)return error('master_has_orders',409);
       }
       await bucket.delete((op==='preview'?'previews/':'masters/')+path);
