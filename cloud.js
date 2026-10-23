@@ -261,8 +261,11 @@
             'Content-Type':mime,'x-file-extension':ext
           },body:file
         });
-        if(!response.ok)throw new Error('R2 preview upload failed '+response.status);
-        const payload=await response.json();
+        const payload=await response.json().catch(()=>({error:'invalid_response'}));
+        if(!response.ok){
+          const code=String(payload?.error||'request_failed').replace(/[^a-z0-9_]/gi,'').slice(0,35);
+          throw new Error('R2_UPLOADING_'+response.status+'_'+code);
+        }
         if(payload.storage!=='r2'||!payload.path)throw new Error('Invalid R2 response');
         filePath=payload.path;storage='r2';
       }else{
@@ -291,7 +294,10 @@
           else await sb.storage.from(BUCKET).remove([path]);
         }catch(cleanupError){console.warn('Preview cleanup',cleanupError)}
       }
-      api().toast('出品できませんでした。通信状況・ファイル形式を確認してください');
+      const reason=String(err?.message||'');
+      api().toast(reason.startsWith('R2_UPLOADING_')
+        ? '音声保存エラー：'+reason.replace('R2_UPLOADING_','')
+        : '出品できませんでした。通信状況・ファイル形式を確認してください');
       button.disabled=false;button.textContent='音声サンプルを公開する';
     }
   }
