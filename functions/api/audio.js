@@ -44,7 +44,7 @@ async function supaInsert(table,data,secret){
   });
   if(!response.ok)throw new Error('database_write_failed_'+response.status);
 }
-async function authUser(request,secret){
+async function authUser(request){
   const match=request.headers.get('authorization')?.match(/^Bearer (.+)$/i);
   if(!match)return null;
   const jwt=match[1];
@@ -54,9 +54,27 @@ async function authUser(request,secret){
   if(!result.ok)return null;
   const data=await result.json();
   if(!UUID.test(data.id||''))return null;
-  const ban=await supa('account_bans',
-    'select=user_id&user_id=eq.'+safeQuery(data.id)+'&lifted_at=is.null',{secret});
-  return ban.length?null:{user:data,jwt};
+  // Check suspension through the user's authenticated RPC, not through
+  // direct account_bans SELECT (this private table intentionally has no client grants).
+  const banResponse=await fetch(SUPABASE_URL+'/rest/v1/rpc/koesell_my_ban_status',{
+    method:'POST',
+    headers:{apikey:PUBLIC_KEY,Authorization:'Bearer '+jwt,
+      'Content-Type':'application/json'},
+    body:'{}'
+  });
+  if(!banResponse.ok)throw new Error('ban_check_failed_'+banResponse.status);
+  if(await banResponse.json()===true)return null;
+  return {user:data,jwt};
+}
+async function privilegedReady(env){
+  try{
+    const key=serverSecret(env);
+    if(!key)return false;
+    const response=await fetch(SUPABASE_URL+'/rest/v1/account_bans?select=user_id&limit=0',{
+      headers:privilegedHeaders(key)
+    });
+    return response.ok;
+  }catch{return false}
 }
 async function readAudio(bucket,key,request,master){
   const obj=await bucket.get(key,{
@@ -85,7 +103,9 @@ export async function onRequest({request,env}){
   const url=new URL(request.url);
   const op=url.searchParams.get('op')||'';
   if(request.method==='GET'&&op==='status'){
-    return json({ready:active(env),storage:'r2'});
+    // "ready" covers customer previews; "masterReady" also requires a working
+    // privileged server key for inserting private sale registrations.
+    return json({ready:active(env),masterReady:active(env)&&await privilegedReady(env),storage:'r2'});
   }
   if(!active(env))return error('r2_not_configured',503);
   if(!['GET','POST','DELETE'].includes(request.method))return error('method_not_allowed',405);
@@ -106,7 +126,7 @@ export async function onRequest({request,env}){
     if(request.method==='GET'&&op==='master'){
       const orderId=url.searchParams.get('orderId')||'';
       if(!UUID.test(orderId))return error('invalid_order',400);
-      const who=await authUser(request,serverSecret(env));
+      const who=await authUser(request);
       if(!who)return error('login_required',401);
       const orders=await supa('voice_orders',
         'select=id,buyer_id,status,purchased_master_path,storage_backend'+
@@ -117,13 +137,15 @@ export async function onRequest({request,env}){
       return readAudio(bucket,'masters/'+orders[0].purchased_master_path,request,true);
     }
     if(request.method==='POST'&&['upload-preview','upload-master'].includes(op)){
-      const who=await authUser(request,serverSecret(env));
+      const who=await authUser(request);
       if(!who)return error('login_required',401);
       const {ext,mime}=mimeOf(request);
       if(!mime)return error('unsupported_audio_format',415);
       const sizeLimit=op==='upload-preview'?10*1024*1024:25*1024*1024;
       const estimated=Number(request.headers.get('content-length')||0);
       if(estimated>sizeLimit)return error('file_too_large',413);
+      if(op==='upload-master'&&!await privilegedReady(env))
+        return error('private_master_registration_not_ready',503);
       const data=await request.arrayBuffer();
       if(data.byteLength<1||data.byteLength>sizeLimit)return error('invalid_file_size',413);
       let key,path;
@@ -169,7 +191,7 @@ export async function onRequest({request,env}){
       }
     }
     if(request.method==='DELETE'&&['preview','master'].includes(op)){
-      const who=await authUser(request,serverSecret(env));
+      const who=await authUser(request);
       if(!who)return error('login_required',401);
       const path=url.searchParams.get('path')||'';
       const valid=op==='preview'?PREVIEW_PATH.test(path):MASTER_PATH.test(path);
