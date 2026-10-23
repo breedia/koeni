@@ -12,7 +12,7 @@
   async function r2Ready(){
     try{
       const r=await fetch('/api/audio?op=status',{cache:'no-store'});
-      return r.ok&&(await r.json()).ready===true;
+      return r.ok&&(await r.json()).masterReady===true;
     }catch{return false}
   }
   async function accessToken(){
