@@ -17,7 +17,7 @@ const error = (code,status) => new Response(JSON.stringify({error:code}),{
 const json = (value,status=200) => new Response(JSON.stringify(value),{
   status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}
 });
-const serverSecret = (env) => env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
+const serverSecret = (env) => String(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 const active = (env) => Boolean(env.KOESELL_AUDIO && serverSecret(env));
 // Supabase secret keys must be used from a backend with an explicit non-browser
 // User-Agent. Never forward a browser's incoming headers to privileged fetches.
