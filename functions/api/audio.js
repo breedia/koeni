@@ -19,26 +19,30 @@ const json = (value,status=200) => new Response(JSON.stringify(value),{
 });
 const serverSecret = (env) => env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
 const active = (env) => Boolean(env.KOESELL_AUDIO && serverSecret(env));
-const privilegedHeaders = (secret) => secret.startsWith('eyJ')
-  ? {apikey:secret,Authorization:'Bearer '+secret}
-  : {apikey:secret};
+// Supabase secret keys must be used from a backend with an explicit non-browser
+// User-Agent. Never forward a browser's incoming headers to privileged fetches.
+const privilegedHeaders = (secret,compat=false) => ({
+  apikey:secret,
+  'User-Agent':'KOESELL-R2-Backend/0.9',
+  ...(secret.startsWith('eyJ')||compat?{Authorization:'Bearer '+secret}:{})
+});
 const safeQuery = (value) => encodeURIComponent(value);
 function mimeOf(request){
   const ext=request.headers.get('x-file-extension')?.toLowerCase()||'';
   return {ext,mime:AUDIO_MIME[ext]};
 }
-async function supa(table,params,{jwt,secret}={}){
+async function supa(table,params,{jwt,secret,compat=false}={}){
   const headers={apikey:PUBLIC_KEY};
   if(jwt)headers.Authorization='Bearer '+jwt;
-  if(secret)Object.assign(headers,privilegedHeaders(secret));
+  if(secret)Object.assign(headers,privilegedHeaders(secret,compat));
   const response=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+params,{headers});
   if(!response.ok)throw new Error('database_query_failed_'+response.status);
   return response.json();
 }
-async function supaInsert(table,data,secret){
+async function supaInsert(table,data,secret,compat=false){
   const response=await fetch(SUPABASE_URL+'/rest/v1/'+table,{
     method:'POST',
-    headers:{...privilegedHeaders(secret),
+    headers:{...privilegedHeaders(secret,compat),
       'Content-Type':'application/json',Prefer:'return=minimal'},
     body:JSON.stringify(data)
   });
@@ -66,15 +70,26 @@ async function authUser(request){
   if(await banResponse.json()===true)return null;
   return {user:data,jwt};
 }
-async function privilegedReady(env){
+async function privilegedAccess(env){
+  const key=serverSecret(env);
+  if(!key)return {ready:false,reason:'not_configured'};
+  if(!key.startsWith('sb_secret_')&&!key.startsWith('eyJ'))
+    return {ready:false,reason:'invalid_secret_type'};
+  // Normal sb_secret_ requests use apikey alone. Retry the documented gateway
+  // compatibility form with matching Authorization only if the first fails.
+  // Never mark masterReady true unless actual service-level grants succeed.
   try{
-    const key=serverSecret(env);
-    if(!key)return false;
-    const response=await fetch(SUPABASE_URL+'/rest/v1/account_bans?select=user_id&limit=0',{
-      headers:privilegedHeaders(key)
-    });
-    return response.ok;
-  }catch{return false}
+    let lastStatus=0;
+    for(const compat of (key.startsWith('sb_secret_')?[false,true]:[false])){
+      const response=await fetch(SUPABASE_URL+'/rest/v1/account_bans?select=user_id&limit=0',{
+        headers:privilegedHeaders(key,compat)
+      });
+      if(response.ok)return {ready:true,compat};
+      lastStatus=response.status;
+      if(response.status>=500)break;
+    }
+    return {ready:false,reason:lastStatus===401||lastStatus===403?'key_not_authorized':'key_probe_failed'};
+  }catch{return {ready:false,reason:'connection_failed'}}
 }
 async function readAudio(bucket,key,request,master){
   const obj=await bucket.get(key,{
@@ -105,7 +120,9 @@ export async function onRequest({request,env}){
   if(request.method==='GET'&&op==='status'){
     // "ready" covers customer previews; "masterReady" also requires a working
     // privileged server key for inserting private sale registrations.
-    return json({ready:active(env),masterReady:active(env)&&await privilegedReady(env),storage:'r2'});
+    const master=active(env)?await privilegedAccess(env):{ready:false,reason:'not_configured'};
+    return json({ready:active(env),masterReady:master.ready,
+      ...(!master.ready?{masterError:master.reason}:{}),storage:'r2'});
   }
   if(!active(env))return error('r2_not_configured',503);
   if(!['GET','POST','DELETE'].includes(request.method))return error('method_not_allowed',405);
@@ -144,7 +161,8 @@ export async function onRequest({request,env}){
       const sizeLimit=op==='upload-preview'?10*1024*1024:25*1024*1024;
       const estimated=Number(request.headers.get('content-length')||0);
       if(estimated>sizeLimit)return error('file_too_large',413);
-      if(op==='upload-master'&&!await privilegedReady(env))
+      const masterAccess=op==='upload-master'?await privilegedAccess(env):null;
+      if(op==='upload-master'&&!masterAccess.ready)
         return error('private_master_registration_not_ready',503);
       const data=await request.arrayBuffer();
       if(data.byteLength<1||data.byteLength>sizeLimit)return error('invalid_file_size',413);
@@ -183,7 +201,7 @@ export async function onRequest({request,env}){
           listing_id:url.searchParams.get('listingId'),owner_id:who.user.id,
           master_path:path,original_filename:filename,file_size_bytes:data.byteLength,
           storage_backend:'r2'
-        },serverSecret(env));
+        },serverSecret(env),masterAccess.compat);
         return json({path,storage:'r2'});
       }catch(e){
         await bucket.delete(key);
@@ -197,13 +215,15 @@ export async function onRequest({request,env}){
       const valid=op==='preview'?PREVIEW_PATH.test(path):MASTER_PATH.test(path);
       if(!valid||!path.startsWith(who.user.id+'/'))return error('forbidden',403);
       if(op==='master'){
+        const service=await privilegedAccess(env);
+        if(!service.ready)return error('private_master_delete_not_ready',503);
         const product=await supa('voice_products',
           'select=listing_id&master_path=eq.'+safeQuery(path)+'&limit=1',
-          {secret:serverSecret(env)});
+          {secret:serverSecret(env),compat:service.compat});
         if(product.length)return error('master_still_registered',409);
         const orders=await supa('voice_orders',
           'select=id&purchased_master_path=eq.'+safeQuery(path)+'&limit=1',
-          {secret:serverSecret(env)});
+          {secret:serverSecret(env),compat:service.compat});
         if(orders.length)return error('master_has_orders',409);
       }
       await bucket.delete((op==='preview'?'previews/':'masters/')+path);
