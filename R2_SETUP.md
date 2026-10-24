@@ -1,47 +1,29 @@
-# KOESELL R2 移行手順 (v0.8)
+# KOESELL Cloudflare R2 接続と動作テスト（v0.9）
 
-## 移行状況
-- GitHubコードとSupabaseスキーマはR2との新旧両対応に変更済み。
-- 現状のSupabase音声保存オブジェクトは0件。過去データ移行は不要。
-- CloudflareでのR2バケット作成・バインディング・秘密情報登録はアカウント保有者が行う必要がある。
-- 設定完了まで旧Supabase Storageを使用。決済は無効のまま。
+## 設定済み
+- Cloudflare Pages `koeni` → R2 Binding `KOESELL_AUDIO` → 非公開バケット `koesell-audio`。
+- 公開アクセスOFF、Standard。
+- 2026-10-23：iPhoneから試聴音声をR2へアップロードし、公開再生できることをユーザーが実機確認。
 
-## 1. R2作成
-1. https://dash.cloudflare.com/ へログイン。
-2. Storage & databases → R2 → Overview へ進む。
-3. R2初回利用時は利用開始と必要な支払い設定を確認。無料枠を超過すると従量課金。
-4. Create bucket から「koesell-audio」を作成。Standardクラス。
-5. Public Access / r2.dev Public Development URLを絶対に有効化しない。
+## v0.9：秘密鍵コピーは不要
+- Cloudflare Pages Function `functions/api/audio.js` は、Supabaseの公開キーとユーザー本人のログインJWTを使う。
+- Supabase RLSが出品者本人・BANでないこと・公開中の既製音声出品をチェックし、販売本編の登録を許可。
+- サーバーは本人所有の出品を検証してR2へアップロードしたあと、同じJWTで `voice_products` を登録。登録が失敗したらR2側のファイルを削除。
+- Cloudflareに追加した誤った `SUPABASE_SECRET_KEY` は**このR2 APIでは使用しない**。正しい高権限キーをコピーする必要はない。後日、変数を削除して設定を整理できる。
+- バケットは非公開。本編は購入者の支払い済み注文だけに配信。
+- 認証ユーザーが架空のR2商品パスをDBへ登録できても請求が起きないよう、Stripe Checkoutは実R2オブジェクトの存在を検証してから決済を開始する。
+- `payments_enabled=false` を維持。本番取引は未開始。
 
-## 2. Pagesバインディング
-1. Workers & Pages → KOESSELLの既存Pagesプロジェクト（koeni）を開く。
-2. Settings → Bindings → Add → R2 bucket。
-3. Variable name は KOESELL_AUDIO。Bucket は koesell-audio。
-4. Productionに設定し、再デプロイ。
-公式: https://developers.cloudflare.com/pages/functions/bindings/
+## iPhoneで次にやること
+1. Cloudflare Pagesの最新Productionデプロイが成功したことを確認。
+2. https://koeni.pages.dev/api/audio?op=status を開く。
+3. `{"ready":true,"masterReady":true,"storage":"r2","authorization":"user-jwt-rls"}` が表示されたら、秘密鍵なしの新実装が反映されている。
+4. KOESELL → マイページ → 自分の出品 → `test` → 「販売本編を登録」。
+5. 自分が権利を持つ短い音声（25MB以下）を登録。
+6. R2 `koesell-audio/masters/` に保存され、マイページで登録済みと確認できるか。
+7. R2本編が未購入者へ直接公開されないことはサーバー側でも再テストする。
 
-## 3. サーバー専用の秘密鍵
-1. Supabase Dashboard → KOESELL project → API Keys。
-2. 「Publishable and secret API keys」から sb_secret_ で始まる秘密鍵をコピー。高権限なのでチャットやGitHubへ送らない。
-3. Cloudflare Pages → Settings → Variables and Secrets → Add。
-4. 名前 SUPABASE_SECRET_KEY、値はコピーした sb_secret_ の秘密鍵。
-5. Encrypted SecretとしてProductionへ保存して再デプロイ。
-6. https://koeni.pages.dev/api/audio?op=status を開き、ready:trueなら切替可能。ready:falseなら旧保存先のまま。
-
-## 4. 動作テスト
-- 自作の音声を1件出品 → R2 previews/ に保存されるか。
-- 未ログインのブラウザで音声を再生できるか。
-- 既製音声の販売本編を1件登録 → R2 masters/ に非公開で保存されるか。
-- 未購入者は本編を取得できないか。
-- 出品削除でプレビューと未販売本編も削除されるか。
-- 決済後の本編ダウンロードはStripe決済テスト完了後にのみ検証。
-
-## 技術資料
-- functions/api/audio.js：JWTの検証・R2アップロード・公開プレビュー・購入者限定DL・安全な削除。
-- cloud.js／index.html：R2 readyの場合だけR2利用、設定前はSupabase Storage維持。
-- sales.js：販売本編アップロードと注文先の保存バックエンド判別。
-- voice_listings.preview_storage、voice_products.storage_backend、voice_orders.storage_backendで保存先を管理。
-- 決済は現在 payments_enabled=false を維持。
-- 追加のスパム防止・費用監視・全機能実機テストが正式公開前に必要。
-
-※ 鍵をコピーする際は第三者に見せず、画面のスクリーンショットにも写さないこと。
+## 未完了
+- R2本編の実機アップロード・アクセス禁止テスト。
+- Stripeのテスト決済・返金・売上分配、出品者本人確認。
+- 決済停止フラグを解除する前の全機能テストと規約整備。
