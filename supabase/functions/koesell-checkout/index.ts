@@ -54,6 +54,19 @@ Deno.serve(async (req:Request)=>{
     });
     if(snapshotError)throw snapshotError;
     if(!product?.ready)return json({error:"payments_not_available"},503);
+    // Reject forged/broken R2 catalog records before starting a payment.
+    // Only Cloudflare's private R2 binding can check the actual stored object.
+    if(product.storage_backend==="r2"){
+      const verifyUrl=SITE+"/api/audio?op=verify-product&listingId="+encodeURIComponent(listingId);
+      const verification=await fetch(verifyUrl,{
+        headers:{Authorization:"Bearer "+token},
+        signal:AbortSignal.timeout(8000)
+      });
+      if(!verification.ok)return json({error:"master_file_unavailable"},409);
+      const check=await verification.json().catch(()=>({exists:false}));
+      if(!check.exists||check.path!==product.master_path)
+        return json({error:"master_file_unavailable"},409);
+    }
     const key=env("STRIPE_SECRET_KEY");
     if(!key)return json({error:"stripe_not_configured"},503);
     if(!key.startsWith("sk_test_")&&env("KOESELL_ALLOW_LIVE_PAYMENTS")!=="yes")
