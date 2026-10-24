@@ -31,6 +31,49 @@
   .modal-content input[type=file],.modal-content audio { max-width:100%; }
   .modal-content { overflow-wrap:anywhere; }
 }
+
+/* KOESELL realtime audio recording monitor — v1.0 */
+.ksr-slot{min-width:0;width:100%;margin:11px 0 14px}
+.ksr{position:relative;isolation:isolate;overflow:hidden;border-radius:23px;
+  padding:20px 20px 16px;color:#faf9ff;
+  background:radial-gradient(ellipse at 75% -15%,rgba(153,113,252,.32),transparent 70%),
+    linear-gradient(137deg,#221b37 0%,#2b2346 58%,#171b31 100%);
+  box-shadow:0 14px 34px rgba(27,17,65,.16),inset 0 0 0 1px rgba(255,255,255,.10)}
+.ksr::before{content:'';position:absolute;inset:auto -40px -92px auto;width:220px;height:160px;
+  border-radius:50%;pointer-events:none;z-index:-1;background:#876bdf;filter:blur(80px);opacity:.2}
+.ksr-heading,.ksr-footer{display:flex;justify-content:space-between;align-items:center;gap:14px;min-width:0}
+.ksr-heading{padding:1px 0 2px}
+.ksr-indicator{display:flex;gap:9px;align-items:center;min-width:0}
+.ksr-stage{font-size:13px;font-weight:800;letter-spacing:.02em;color:#f3eefd}
+.ksr-dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;background:#9281c0;box-shadow:0 0 0 4px rgba(146,129,192,.13)}
+.ksr[data-ksr-phase="recording"] .ksr-dot{background:#ff6682;box-shadow:0 0 0 5px rgba(255,102,130,.12);animation:ksr-pulse 1.15s ease-in-out infinite}
+.ksr[data-ksr-phase="complete"] .ksr-dot{background:#90e8c9;box-shadow:0 0 0 4px rgba(144,232,201,.13)}
+.ksr[data-ksr-phase="error"] .ksr-dot{background:#ffbf8d}
+.ksr-clock{white-space:nowrap;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:1px}
+.ksr-elapsed{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:24px;line-height:1;letter-spacing:-1.2px;color:#fff}
+.ksr-max{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:#b4a7d2}
+.ksr-visual{width:100%;height:104px;position:relative;margin:5px 0 9px}
+.ksr-canvas{position:relative;z-index:2;display:block;width:100%;height:104px;max-width:100%}
+.ksr-centerline{position:absolute;z-index:1;left:0;right:0;top:50%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(215,194,255,.22),transparent);pointer-events:none}
+.ksr-footer{padding-top:10px;border-top:1px solid rgba(255,255,255,.10);gap:9px}
+.ksr-helper{font-size:11px;color:#c6bddb;line-height:1.5;min-width:0;overflow-wrap:anywhere}
+.ksr-signal{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:0 0 auto}
+.ksr-signal-dot{width:5px;height:5px;background:#9c8abd;border-radius:50%}
+.ksr[data-ksr-phase="recording"] .ksr-signal-dot{background:#ff7791}
+.ksr-meter-text{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;font-size:9px;color:#d7d0e8}
+.ksr-actions{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 8px}
+.ksr-actions .btn{flex:1 1 130px;min-height:45px;border-radius:13px;font-size:14px}
+.ksr-actions button:not(:disabled):active{transform:translateY(1px)}
+@keyframes ksr-pulse{0%,100%{box-shadow:0 0 0 4px rgba(255,102,130,.13)}50%{box-shadow:0 0 0 9px rgba(255,102,130,0)}}
+@media(max-width:760px){
+  .ksr{padding:17px 15px 13px;border-radius:20px}
+  .ksr-elapsed{font-size:23px}
+  .ksr-stage{font-size:12px}
+  .ksr-actions .btn{font-size:14px}
+}
+@media(prefers-reduced-motion:reduce){.ksr[data-ksr-phase="recording"] .ksr-dot{animation:none}}
 </style>
 </head>
 <body>
@@ -410,10 +453,14 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     const status=form.querySelector('#koeniRecordStatus');
     const preview=form.querySelector('#koeniRecordPreview');
     const filePicker=form.querySelector('#cloudAudio');
+    const visual=window.KOESELL_RECORDER_UI?.mount(form.querySelector('#koeniRecordVisual'),{
+      maxSeconds:60,contextLabel:'試聴用音声'
+    });
     let liveStream=null, objectUrl=null, autoStop=null, chunks=[];
     const statusText = text => {if(form.isConnected) status.textContent=text;};
     function releaseStream() {
       if(autoStop){clearTimeout(autoStop);autoStop=null;}
+      visual?.stop();
       if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null;}
     }
     function discardPreview() {
@@ -443,26 +490,29 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
         chunks=[];
         discardPreview();
         rec.ondataavailable=ev=>{if(ev.data?.size)chunks.push(ev.data);};
-        rec.onerror=()=>{releaseStream();startBtn.disabled=false;stopBtn.disabled=true;statusText('録音に失敗しました。Safariでお試しください。');};
+        rec.onerror=()=>{releaseStream();visual?.fail('もう一度録音するか、ファイルを選んでください');startBtn.disabled=false;stopBtn.disabled=true;statusText('録音に失敗しました。Safariでお試しください。');};
         rec.onstop=()=>{
           releaseStream();startBtn.disabled=false;stopBtn.disabled=true;
           if(!form.isConnected)return;
           const type=rec.mimeType||chunks[0]?.type||'audio/mp4';
           const ext=type.includes('webm')?'webm':type.includes('ogg')?'ogg':type.includes('wav')?'wav':'m4a';
           const blob=new Blob(chunks,{type:acceptable[ext]});
-          if(!blob.size){statusText('録音データが空です。もう一度お試しください。');return;}
+          if(!blob.size){visual?.fail('音声が空でした。もう一度録音してください');statusText('録音データが空です。もう一度お試しください。');return;}
           recordState.file=new File([blob],'koeni-voice-'+Date.now()+'.'+ext,{type:acceptable[ext]});
           objectUrl=URL.createObjectURL(blob);
           preview.src=objectUrl;preview.hidden=false;
+          visual?.complete();
           statusText('録音が完了しました。再生して確認し、そのまま公開できます。');
         };
         rec.start();
+        visual?.start(liveStream);
         stopBtn.disabled=false;
         statusText('録音中 ● 話し終えたら「録音停止」を押してください（最大60秒）');
         autoStop=setTimeout(()=>{if(rec.state==='recording')rec.stop();},60000);
       }catch(err){
         console.warn('KOENI mic access failed',err);
         releaseStream();startBtn.disabled=false;stopBtn.disabled=true;
+        visual?.fail(err?.name==='NotAllowedError'?'マイクの許可が必要です':'マイクを利用できません');
         statusText(err?.name==='NotAllowedError'
           ?'マイクへのアクセスが許可されていません。Safariでマイクを許可してください。'
           :'録音を開始できませんでした。SafariでKOESELLを直接開いてみてください。');
@@ -472,12 +522,13 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     filePicker.addEventListener('change',()=>{
       if(filePicker.files?.length){
         recordState.file=null;discardPreview();
+        visual?.selected(filePicker.files[0].name);
         statusText('選択ファイル：'+filePicker.files[0].name);
       }
     });
     const observer=new MutationObserver(()=>{
       if(!form.isConnected){
-        stop();releaseStream();discardPreview();observer.disconnect();
+        stop();releaseStream();discardPreview();visual?.destroy();observer.disconnect();
       }
     });
     const root=document.getElementById('modalRoot');
@@ -506,7 +557,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
       '<div class="field"><label>声の特徴*</label><input name="tag" minlength="1" maxlength="35" required placeholder="例：落ち着いた低音"></div>'+
       '<div class="field"><label>長さ・収録条件</label><input name="duration" maxlength="30" placeholder="例：20秒 / 100字まで"></div>'+
       '<div class="field"><label>利用許諾（正式な販売契約ではありません）*</label><select name="license"><option>個人利用のみ</option><option>商用利用可（SNS動画）</option><option>商用利用可（広告・企業利用含む）</option><option>用途によって要相談</option></select></div>'+
-      '<div class="field"><label>① サイト上で録音する（iPhone対応）</label><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button id="koeniRecordStart" type="button" class="btn light sm">● 録音開始</button><button id="koeniRecordStop" type="button" class="btn light sm" disabled>■ 録音停止</button></div><p class="help" id="koeniRecordStatus" role="status">マイクを許可すると、最大60秒の音声を直接録音できます。</p><audio id="koeniRecordPreview" controls hidden style="width:100%;margin:8px 0"></audio></div>'+
+      '<div class="field"><label>① この場で試聴音声を録音</label><div id="koeniRecordVisual" class="ksr-slot"></div><div class="ksr-actions"><button id="koeniRecordStart" type="button" class="btn light sm">● 録音開始</button><button id="koeniRecordStop" type="button" class="btn light sm" disabled>■ 録音停止</button></div><p class="help" id="koeniRecordStatus" role="status">最大60秒。録音停止後に試聴できます。</p><audio id="koeniRecordPreview" controls playsinline preload="metadata" hidden style="width:100%;margin:8px 0"></audio></div>'+
       '<div class="field"><label>② または音声ファイルを選ぶ（最大10MB）</label><input name="preview" id="cloudAudio" type="file" accept=".m4a,.mp3,.wav,.ogg,.webm,.aac,.flac,.3gp,.3g2"><div class="help">iPhoneボイスメモのM4Aにも対応。①と②のどちらか一方でOK。登録後は誰でも試聴できます。第三者による音声の複製を完全には防げません。</div></div>'+
       '<div class="field"><label>説明・試聴用文章（任意）</label><textarea name="sampleText" maxlength="350" placeholder="声の雰囲気や読み上げる文章など"></textarea></div>'+
       '<label class="check"><input type="checkbox" name="rights" required><span>自分が権利を保有する声と台本だけを出品し、他人へのなりすまし・詐欺・無断AI複製に利用しません。出品と同時に試聴用音声が一般公開されることを理解しました。</span></label>'+
@@ -669,6 +720,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
 </script>
 <script defer src="messages.js?v=20261021-v05"></script>
 <script defer src="admin-access.js?v=20261021-v07"></script>
-<script defer src="sales.js?v=20261021-v07"></script>
+<script defer src="recording-ui.js?v=20261024-live1"></script>
+<script defer src="sales.js?v=20261024-live1"></script>
 </body>
 </html>
