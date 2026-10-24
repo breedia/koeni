@@ -69,7 +69,7 @@ Deno.serve(async(req:Request)=>{
         :reply({error:"live_connect_disabled"},503);
     }
     const mode=isTest?"test":"live";
-    const snapshot=await db.rpc("koesell_connect_get",{target_user_id:user.id});
+    const snapshot=await db.rpc("koesell_connect_get_mode",{target_user_id:user.id,target_mode:mode});
     if(snapshot.error)throw snapshot.error;
     let accountId=typeof snapshot.data?.accountId==="string"?snapshot.data.accountId:"";
     if(accountId&&!/^acct_[a-zA-Z0-9]+$/.test(accountId))
@@ -85,8 +85,8 @@ Deno.serve(async(req:Request)=>{
       if(!/^acct_[a-zA-Z0-9]+$/.test(created?.id||""))
         return reply({error:"seller_account_create_failed"},503);
       accountId=created.id;
-      const saved=await db.rpc("koesell_connect_set",{
-        target_user_id:user.id,target_account_id:accountId,
+      const saved=await db.rpc("koesell_connect_set_mode",{
+        target_user_id:user.id,target_account_id:accountId,target_mode:mode,
         target_payouts_enabled:false,target_details_submitted:false
       });
       if(saved.error)throw saved.error;
@@ -96,8 +96,8 @@ Deno.serve(async(req:Request)=>{
     if(account.id!==accountId)return reply({error:"seller_account_mismatch"},503);
     const transfersActive=account.capabilities?.transfers==="active";
     const ready=account.payouts_enabled===true&&transfersActive;
-    const synced=await db.rpc("koesell_connect_set",{
-      target_user_id:user.id,target_account_id:accountId,
+    const synced=await db.rpc("koesell_connect_set_mode",{
+      target_user_id:user.id,target_account_id:accountId,target_mode:mode,
       target_payouts_enabled:ready,target_details_submitted:account.details_submitted===true
     });
     if(synced.error)throw synced.error;
