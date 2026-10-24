@@ -477,7 +477,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
         statusText('このブラウザでは録音できません。SafariでKOESELLを直接開いてください。');
         return;
       }
-      startBtn.disabled=true;statusText('マイクの使用許可を確認しています…');
+      startBtn.disabled=true;statusText('マイクの使用許可を確認しています…');visual?.arm();
       try {
         liveStream=await navigator.mediaDevices.getUserMedia({audio:true});
         if(!form.isConnected){releaseStream();return;}
@@ -720,7 +720,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
 </script>
 <script defer src="messages.js?v=20261021-v05"></script>
 <script defer src="admin-access.js?v=20261021-v07"></script>
-<script defer src="recording-ui.js?v=20261024-live1"></script>
-<script defer src="sales.js?v=20261024-live1"></script>
+<script defer src="recording-ui.js?v=20261024-live2"></script>
+<script defer src="sales.js?v=20261024-live2"></script>
 </body>
 </html>
