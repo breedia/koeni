@@ -109,6 +109,22 @@ export async function onRequest({request,env}){
       if(!listings.length)return error('not_found',404);
       return readAudio(bucket,'previews/'+path,request,false);
     }
+    // Checkout may query metadata-only object existence. Never return its contents.
+    // Authenticated users see only RLS-approved published product records.
+    if(request.method==='GET'&&op==='verify-product'){
+      const listingId=url.searchParams.get('listingId')||'';
+      if(!UUID.test(listingId))return error('invalid_listing',400);
+      const who=await authUser(request);
+      if(!who)return error('login_required',401);
+      const products=await supa('voice_products',
+        'select=master_path,storage_backend&listing_id=eq.'+safeQuery(listingId)+'&limit=1',
+        {jwt:who.jwt});
+      const p=products[0];
+      if(!p||p.storage_backend!=='r2'||!MASTER_PATH.test(p.master_path))
+        return json({exists:false});
+      const object=await bucket.head('masters/'+p.master_path);
+      return json({exists:Boolean(object),path:p.master_path});
+    }
     if(request.method==='GET'&&op==='master'){
       const orderId=url.searchParams.get('orderId')||'';
       if(!UUID.test(orderId))return error('invalid_order',400);
