@@ -94,3 +94,12 @@
 ## 安全ガイド
 - 公開ページ: [safety.html](safety.html)。音声の無断複製や詐欺の防止、メッセージの自動検知と運営確認、通報方法を案内する。
 - トップページのフッターからリンク済み。これは運用ガイドであり、正式な利用規約・プライバシーポリシーの代替ではない。
+
+## v1.0 独自ドメイン・売上受取の準備（2026-10-24）
+
+- お名前.com取得ドメイン `koesell.com` をCloudflare Pages（`koeni`）に登録申請済み。ネームサーバーも変更済み。現時点ではCloudflareの表示が `Initializing`、HTTPSでの本番閲覧は未検証。
+- 新旧ドメインに対し、Supabaseメール認証の戻り先URLと決済/納品CORSを対応（Edge Functionsは新バージョンをデプロイ）。
+- 出品者がStripeで本人確認・振込先登録を進める「¥ 売上受取設定」をマイページに追加。実際のStripe APIキー未接続の場合は操作無効の案内を表示。
+- API `koesell-connect`、限定RPC `koesell_connect_get/set`、DB migration `20261024_seller_connect_onboarding_v10.sql` 追加。
+- `commerce_settings.payments_enabled=false` と `platform_fee_bps=null` を維持。実際の決済・出品者への送金は未開始。
+- 詳細・ユーザー操作は [DOMAIN_MIGRATION.md](DOMAIN_MIGRATION.md) および [COMMERCE_LAUNCH.md](COMMERCE_LAUNCH.md) を参照。
