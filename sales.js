@@ -106,7 +106,7 @@
         say('このブラウザでは録音に対応していません。Safariで開くか、音声ファイルを選んでください。');return;
       }
       starting=true;recordStart.disabled=true;
-      say('マイクの使用許可を確認しています…');
+      say('マイクの使用許可を確認しています…');visual?.arm();
       try{
         const stream=await navigator.mediaDevices.getUserMedia({audio:true});
         if(!masterForm.isConnected){stream.getTracks().forEach(t=>t.stop());return}
