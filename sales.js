@@ -48,8 +48,9 @@
       '<div class="hintbox"><b>一般公開されません。</b>試聴用音声とは別の、購入者に納品する完成音声を登録します。最大25MBです。決済機能が完成するまでは購入者へ販売されません。自分が権利を持つ音声だけ登録してください。</div>'+
       '<p class="muted">対象の出品: '+esc(listing.title)+'</p>'+
       '<form id="masterUploadForm">'+
-      '<div class="field"><label>① この場で録音する（iPhone対応）</label>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<div class="field"><label>① この場で販売本編を録音</label>'+
+      '<div id="masterRecordVisual" class="ksr-slot"></div>'+
+      '<div class="ksr-actions">'+
       '<button class="btn light sm" type="button" id="masterRecordStart">● 録音開始</button>'+
       '<button class="btn light sm" type="button" id="masterRecordStop" disabled>■ 録音停止</button></div>'+
       '<div class="help" id="masterRecordStatus" aria-live="polite">最大10分・25MBまで。録音後に試聴してから登録できます。</div>'+
@@ -66,11 +67,16 @@
     const recordStatus=masterForm.querySelector('#masterRecordStatus');
     const recordPreview=masterForm.querySelector('#masterRecordPreview');
     const filePicker=masterForm.querySelector('#masterAudioFile');
+    const visual=window.KOESELL_RECORDER_UI?.mount(masterForm.querySelector('#masterRecordVisual'),{
+      maxSeconds:600,contextLabel:'販売本編（非公開）'
+    });
     let recordedFile=null,activeRecorder=null,micStream=null,recordUrl=null;
     let chunks=[],recordingTimer=null,isRecording=false,starting=false,uploading=false;
+    let discardStoppedTake=false;
     const say=message=>{if(masterForm.isConnected)recordStatus.textContent=message};
     function closeMic(){
       if(recordingTimer!==null){clearTimeout(recordingTimer);recordingTimer=null}
+      visual?.stop();
       if(micStream){micStream.getTracks().forEach(track=>track.stop());micStream=null}
     }
     function clearRecording(){
@@ -91,7 +97,7 @@
         activeRecorder.onstop=null;
         activeRecorder.onerror=null;
       }
-      stopRecord();closeMic();clearRecording();
+      stopRecord();closeMic();clearRecording();visual?.destroy();
       isRecording=false;starting=false;
     }
     recordStart.addEventListener('click',async()=>{
@@ -108,11 +114,13 @@
         const preferred=['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
         const mime=preferred.find(type=>MediaRecorder.isTypeSupported?.(type));
         const recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
-        activeRecorder=recorder;chunks=[];clearRecording();filePicker.value='';
+        activeRecorder=recorder;chunks=[];discardStoppedTake=false;
+        clearRecording();filePicker.value='';
         recorder.ondataavailable=ev=>{if(ev.data?.size)chunks.push(ev.data)};
         recorder.onerror=()=>{
           closeMic();isRecording=false;starting=false;
           if(!masterForm.isConnected)return;
+          visual?.fail('もう一度録音するかファイルを選んでください');
           recordStart.disabled=false;recordStop.disabled=true;
           say('録音に失敗しました。もう一度録音するかファイルを選んでください。');
         };
@@ -120,18 +128,21 @@
           closeMic();isRecording=false;starting=false;
           if(!masterForm.isConnected)return;
           recordStart.disabled=false;recordStop.disabled=true;
+          if(discardStoppedTake){discardStoppedTake=false;chunks=[];return}
           const type=recorder.mimeType||chunks[0]?.type||'audio/mp4';
           const ext=type.includes('webm')?'webm':type.includes('ogg')?'ogg':type.includes('wav')?'wav':'m4a';
           const blob=new Blob(chunks,{type:accept[ext]});
           chunks=[];
-          if(!blob.size){say('録音が空でした。もう一度お試しください。');return}
-          if(blob.size>MB){say('音声が25MBを超えています。短く録音し直してください。');return}
+          if(!blob.size){visual?.fail('録音が空でした');say('録音が空でした。もう一度お試しください。');return}
+          if(blob.size>MB){visual?.fail('25MBを超えました。短く録音してください');say('音声が25MBを超えています。短く録音し直してください。');return}
           recordedFile=new File([blob],'koesell-master-'+Date.now()+'.'+ext,{type:accept[ext]});
           recordUrl=URL.createObjectURL(blob);
           recordPreview.src=recordUrl;recordPreview.hidden=false;
+          visual?.complete();
           say('録音完了。再生して内容を確認し、「非公開で本編を登録する」を押してください（'+Math.ceil(blob.size/1024)+'KB）。');
         };
         recorder.start(1000);
+        visual?.start(micStream);
         isRecording=true;recordStop.disabled=false;
         say('● 録音中。終了するときは「録音停止」を押してください（最大10分）。');
         recordingTimer=setTimeout(()=>{if(recorder.state==='recording')recorder.stop()},10*60*1000);
@@ -140,6 +151,7 @@
         closeMic();isRecording=false;
         if(masterForm.isConnected){
           recordStart.disabled=false;recordStop.disabled=true;
+          visual?.fail(err?.name==='NotAllowedError'?'マイクの許可が必要です':'録音できませんでした');
           say(err?.name==='NotAllowedError'
             ?'マイクが許可されていません。ブラウザの設定でマイクを許可してください。'
             :'録音を開始できませんでした。Safariで直接開くか、ファイル選択をお試しください。');
@@ -150,8 +162,8 @@
     filePicker.addEventListener('change',()=>{
       const selected=filePicker.files?.[0];
       if(!selected)return;
-      if(isRecording)stopRecord();
-      clearRecording();
+      if(isRecording){discardStoppedTake=true;stopRecord();}
+      clearRecording();visual?.selected(selected.name);
       say('選択した音声：'+selected.name);
     });
     // Close microphone access immediately when the user dismisses the modal.
