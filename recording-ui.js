@@ -113,17 +113,33 @@
       if(context&&context.state!=='closed'){void context.close().catch(()=>{})}
       context=null;
     }
+    // Called synchronously from the tap handler, before the asynchronous
+    // microphone permission prompt. This is necessary on some iOS browsers
+    // where Web Audio cannot start outside a user activation gesture.
+    function arm(){
+      if(gone)return;
+      if(!context){
+        try{
+          const AC=window.AudioContext||window.webkitAudioContext;
+          if(AC)context=new AC();
+        }catch(e){console.warn('Recording audio monitor unavailable',e?.name||'unknown')}
+      }
+      if(context?.state==='suspended')void context.resume().catch(()=>{});
+      elapsedNode.textContent='00:00';levels.fill(0);
+      update('waiting','マイクを準備中','端末のマイク使用を許可してください','MIC SETUP');
+    }
     function start(stream){
       if(gone)return;
-      unplug();
+      if(source){try{source.disconnect()}catch{}}
+      source=null;analyser=null;data=null;
       elapsedMs=0;startedAt=performance.now();
-      elapsedNode.textContent='00:00';
-      levels.fill(0);
-      // AudioContext is available on modern iOS Safari and Chrome (WebKit).
+      elapsedNode.textContent='00:00';levels.fill(0);
       try{
-        const AC=window.AudioContext||window.webkitAudioContext;
-        if(AC){
-          context=new AC();
+        if(!context){
+          const AC=window.AudioContext||window.webkitAudioContext;
+          if(AC)context=new AC();
+        }
+        if(context){
           analyser=context.createAnalyser();
           analyser.fftSize=2048;
           analyser.smoothingTimeConstant=.73;
@@ -134,7 +150,7 @@
         }
       }catch(e){
         console.warn('Recording waveform unavailable',e?.name||'unknown');
-        unplug(); // Recording still works even if AudioContext is unsupported.
+        unplug(); // Recording still works even without Web Audio support.
       }
       update('recording','録音中','声に合わせて波形が動きます','LIVE INPUT');
       if(!raf)raf=requestAnimationFrame(loop);
@@ -166,7 +182,7 @@
       if(element.isConnected)element.replaceChildren();
     }
     paintOnce();
-    return {start,stop,complete,reset,selected,fail,destroy};
+    return {arm,start,stop,complete,reset,selected,fail,destroy};
   }
   window.KOESELL_RECORDER_UI={mount};
 })();
