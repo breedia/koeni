@@ -119,10 +119,14 @@
     const status=form.querySelector('#koeniRecordStatus');
     const preview=form.querySelector('#koeniRecordPreview');
     const filePicker=form.querySelector('#cloudAudio');
+    const visual=window.KOESELL_RECORDER_UI?.mount(form.querySelector('#koeniRecordVisual'),{
+      maxSeconds:60,contextLabel:'試聴用音声'
+    });
     let liveStream=null, objectUrl=null, autoStop=null, chunks=[];
     const statusText = text => {if(form.isConnected) status.textContent=text;};
     function releaseStream() {
       if(autoStop){clearTimeout(autoStop);autoStop=null;}
+      visual?.stop();
       if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null;}
     }
     function discardPreview() {
@@ -152,26 +156,29 @@
         chunks=[];
         discardPreview();
         rec.ondataavailable=ev=>{if(ev.data?.size)chunks.push(ev.data);};
-        rec.onerror=()=>{releaseStream();startBtn.disabled=false;stopBtn.disabled=true;statusText('録音に失敗しました。Safariでお試しください。');};
+        rec.onerror=()=>{releaseStream();visual?.fail('もう一度録音するか、ファイルを選んでください');startBtn.disabled=false;stopBtn.disabled=true;statusText('録音に失敗しました。Safariでお試しください。');};
         rec.onstop=()=>{
           releaseStream();startBtn.disabled=false;stopBtn.disabled=true;
           if(!form.isConnected)return;
           const type=rec.mimeType||chunks[0]?.type||'audio/mp4';
           const ext=type.includes('webm')?'webm':type.includes('ogg')?'ogg':type.includes('wav')?'wav':'m4a';
           const blob=new Blob(chunks,{type:acceptable[ext]});
-          if(!blob.size){statusText('録音データが空です。もう一度お試しください。');return;}
+          if(!blob.size){visual?.fail('音声が空でした。もう一度録音してください');statusText('録音データが空です。もう一度お試しください。');return;}
           recordState.file=new File([blob],'koeni-voice-'+Date.now()+'.'+ext,{type:acceptable[ext]});
           objectUrl=URL.createObjectURL(blob);
           preview.src=objectUrl;preview.hidden=false;
+          visual?.complete();
           statusText('録音が完了しました。再生して確認し、そのまま公開できます。');
         };
         rec.start();
+        visual?.start(liveStream);
         stopBtn.disabled=false;
         statusText('録音中 ● 話し終えたら「録音停止」を押してください（最大60秒）');
         autoStop=setTimeout(()=>{if(rec.state==='recording')rec.stop();},60000);
       }catch(err){
         console.warn('KOENI mic access failed',err);
         releaseStream();startBtn.disabled=false;stopBtn.disabled=true;
+        visual?.fail(err?.name==='NotAllowedError'?'マイクの許可が必要です':'マイクを利用できません');
         statusText(err?.name==='NotAllowedError'
           ?'マイクへのアクセスが許可されていません。Safariでマイクを許可してください。'
           :'録音を開始できませんでした。SafariでKOESELLを直接開いてみてください。');
@@ -181,12 +188,13 @@
     filePicker.addEventListener('change',()=>{
       if(filePicker.files?.length){
         recordState.file=null;discardPreview();
+        visual?.selected(filePicker.files[0].name);
         statusText('選択ファイル：'+filePicker.files[0].name);
       }
     });
     const observer=new MutationObserver(()=>{
       if(!form.isConnected){
-        stop();releaseStream();discardPreview();observer.disconnect();
+        stop();releaseStream();discardPreview();visual?.destroy();observer.disconnect();
       }
     });
     const root=document.getElementById('modalRoot');
@@ -215,7 +223,7 @@
       '<div class="field"><label>声の特徴*</label><input name="tag" minlength="1" maxlength="35" required placeholder="例：落ち着いた低音"></div>'+
       '<div class="field"><label>長さ・収録条件</label><input name="duration" maxlength="30" placeholder="例：20秒 / 100字まで"></div>'+
       '<div class="field"><label>利用許諾（正式な販売契約ではありません）*</label><select name="license"><option>個人利用のみ</option><option>商用利用可（SNS動画）</option><option>商用利用可（広告・企業利用含む）</option><option>用途によって要相談</option></select></div>'+
-      '<div class="field"><label>① サイト上で録音する（iPhone対応）</label><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button id="koeniRecordStart" type="button" class="btn light sm">● 録音開始</button><button id="koeniRecordStop" type="button" class="btn light sm" disabled>■ 録音停止</button></div><p class="help" id="koeniRecordStatus" role="status">マイクを許可すると、最大60秒の音声を直接録音できます。</p><audio id="koeniRecordPreview" controls hidden style="width:100%;margin:8px 0"></audio></div>'+
+      '<div class="field"><label>① この場で試聴音声を録音</label><div id="koeniRecordVisual" class="ksr-slot"></div><div class="ksr-actions"><button id="koeniRecordStart" type="button" class="btn light sm">● 録音開始</button><button id="koeniRecordStop" type="button" class="btn light sm" disabled>■ 録音停止</button></div><p class="help" id="koeniRecordStatus" role="status">最大60秒。録音停止後に試聴できます。</p><audio id="koeniRecordPreview" controls playsinline preload="metadata" hidden style="width:100%;margin:8px 0"></audio></div>'+
       '<div class="field"><label>② または音声ファイルを選ぶ（最大10MB）</label><input name="preview" id="cloudAudio" type="file" accept=".m4a,.mp3,.wav,.ogg,.webm,.aac,.flac,.3gp,.3g2"><div class="help">iPhoneボイスメモのM4Aにも対応。①と②のどちらか一方でOK。登録後は誰でも試聴できます。第三者による音声の複製を完全には防げません。</div></div>'+
       '<div class="field"><label>説明・試聴用文章（任意）</label><textarea name="sampleText" maxlength="350" placeholder="声の雰囲気や読み上げる文章など"></textarea></div>'+
       '<label class="check"><input type="checkbox" name="rights" required><span>自分が権利を保有する声と台本だけを出品し、他人へのなりすまし・詐欺・無断AI複製に利用しません。出品と同時に試聴用音声が一般公開されることを理解しました。</span></label>'+
