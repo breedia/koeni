@@ -3,10 +3,11 @@
 // Server authorization: buyer must own a paid, non-refunded order.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const SITE = "https://koeni.pages.dev";
+const LEGACY_SITE = "https://koeni.pages.dev";
+const ALLOWED_SITES = new Set([LEGACY_SITE,"https://koesell.com","https://www.koesell.com"]);
 const env = (name: string) => Deno.env.get(name) || "";
 const cors = (origin: string | null) => ({
-  "Access-Control-Allow-Origin": origin === SITE ? SITE : SITE,
+  "Access-Control-Allow-Origin": origin && ALLOWED_SITES.has(origin) ? origin : LEGACY_SITE,
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Vary": "Origin",
@@ -28,7 +29,7 @@ Deno.serve(async (req: Request) => {
   const origin = req.headers.get("origin");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(origin) });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405, origin);
-  if (origin && origin !== SITE) return json({ error: "origin_not_allowed" }, 403, origin);
+  if (origin && !ALLOWED_SITES.has(origin)) return json({ error: "origin_not_allowed" }, 403, origin);
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return json({ error: "login_required" }, 401, origin);
   const adminKey = secret();
