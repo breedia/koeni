@@ -1,15 +1,18 @@
 // KOESELL Stripe Checkout (stock-only).
 // Disabled until commerce_settings.payments_enabled is explicitly enabled.
 import { createClient } from "npm:@supabase/supabase-js@2";
-const SITE = "https://koeni.pages.dev";
-const CORS = {
-  "Access-Control-Allow-Origin": SITE,
+const LEGACY_SITE = "https://koeni.pages.dev";
+const ALLOWED_SITES = new Set([LEGACY_SITE,"https://koesell.com","https://www.koesell.com"]);
+const cors = (origin: string | null) => ({
+  // Never reflect an arbitrary Origin into the response.
+  "Access-Control-Allow-Origin": origin && ALLOWED_SITES.has(origin) ? origin : LEGACY_SITE,
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Vary": "Origin",
-};
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),{
-  status,headers:{...CORS,"Content-Type":"application/json","Cache-Control":"no-store"}
+});
+let responseOrigin: string | null = null;
+const json = (body: unknown, status = 200, origin: string | null = responseOrigin) => new Response(JSON.stringify(body),{
+  status,headers:{...cors(origin),"Content-Type":"application/json","Cache-Control":"no-store"}
 });
 const env=(k:string)=>Deno.env.get(k)||"";
 function serviceKey(){
@@ -34,12 +37,14 @@ async function stripePost(path:string,key:string,params:URLSearchParams,idempote
   return obj;
 }
 Deno.serve(async (req:Request)=>{
-  if(req.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
-  if(req.method!=="POST")return json({error:"method_not_allowed"},405);
   const origin=req.headers.get("origin");
-  if(origin&&origin!==SITE)return json({error:"origin_not_allowed"},403);
+  responseOrigin=origin;
+  if(req.method==="OPTIONS")return new Response(null,{status:204,headers:cors(origin)});
+  if(req.method!=="POST")return json({error:"method_not_allowed"},405,origin);
+  if(origin&&!ALLOWED_SITES.has(origin))return json({error:"origin_not_allowed"},403,origin);
+  const successSite=origin&&ALLOWED_SITES.has(origin)?origin:LEGACY_SITE;
   const token=req.headers.get("authorization")?.replace(/^Bearer\s+/i,"");
-  if(!token)return json({error:"login_required"},401);
+  if(!token)return json({error:"login_required"},401,origin);
   const adminKey=serviceKey(),baseUrl=env("SUPABASE_URL");
   if(!adminKey||!baseUrl)return json({error:"not_configured"},503);
   const db=createClient(baseUrl,adminKey,{auth:{autoRefreshToken:false,persistSession:false}});
@@ -57,7 +62,8 @@ Deno.serve(async (req:Request)=>{
     // Reject forged/broken R2 catalog records before starting a payment.
     // Only Cloudflare's private R2 binding can check the actual stored object.
     if(product.storage_backend==="r2"){
-      const verifyUrl=SITE+"/api/audio?op=verify-product&listingId="+encodeURIComponent(listingId);
+      // Canonical Pages hostname remains available even while the custom zone is pending.
+      const verifyUrl=LEGACY_SITE+"/api/audio?op=verify-product&listingId="+encodeURIComponent(listingId);
       const verification=await fetch(verifyUrl,{
         headers:{Authorization:"Bearer "+token},
         signal:AbortSignal.timeout(8000)
@@ -108,8 +114,8 @@ Deno.serve(async (req:Request)=>{
       "payment_intent_data[transfer_data][destination]":product.stripe_account,
       "client_reference_id":orderId,
       "metadata[order_id]":orderId,
-      "success_url":SITE+"/?checkout=success&session_id={CHECKOUT_SESSION_ID}",
-      "cancel_url":SITE+"/?checkout=cancel"
+      "success_url":successSite+"/?checkout=success&session_id={CHECKOUT_SESSION_ID}",
+      "cancel_url":successSite+"/?checkout=cancel"
     };
     if(fee>0)fields["payment_intent_data[application_fee_amount]"]=String(fee);
     for(const [k,v]of Object.entries(fields))params.set(k,v);
