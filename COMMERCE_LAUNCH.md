@@ -58,3 +58,14 @@ Supabase secrets: https://supabase.com/docs/guides/functions/secrets
 - 購入後に出品者がBANされた場合でも、既存の有料購入権利の扱いは法務・返金ルールと一緒に検討する。
 - 退会と購入済み音声の保持は決済記録の保管義務に配慮して実装が必要。
 - 決済プロバイダからの返金・不正異議申立に伴う支払い取消しや売上分配の責任設計は未検証。
+
+## v1.0 Stripe Connect出品者登録の土台（2026-10-24）
+
+- `koesell-connect` Edge Function を新規デプロイ。本人のJWT・BAN状態を検証し、Stripe Connect Expressアカウントをユーザーごとに一度だけ作成する処理を実装。
+- Stripe-hosted Account Linkによる本人確認・振込先登録・再開の導線を実装。サイト内に銀行口座・本人確認書類は保存しない。
+- `koesell_private.seller_connect` はprivate schema + RLSで保護。`koesell_connect_get/set` RPCはservice_roleのみ実行可能。アカウントID差し替え不可。
+- マイページ「¥ 売上受取設定」は登録状況を取得。Stripeからの帰還時には再照会し、単に戻っただけでは完了判定をしない。
+- 本番アカウント自動作成は `KOESELL_ALLOW_LIVE_CONNECT=yes` がないと停止。テスト/本番アカウントを混ぜない。
+- **未確認/ブロッカー**：運営のStripe本番登録・Connect有効化、`STRIPE_SECRET_KEY` のテスト鍵設定、端末でのConnect実動作検証。
+- 手数料設定と支払開始スイッチは未変更。
+- 新独自ドメインとの両立は [DOMAIN_MIGRATION.md](DOMAIN_MIGRATION.md) を参照。
