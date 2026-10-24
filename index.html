@@ -143,7 +143,11 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&el('modalRoot').inn
 window.KOENI_AUTH_CONFIG = Object.freeze({
   url: 'https://tiyyxtbmaxtdsmmrdsjd.supabase.co',
   publishableKey: 'sb_publishable_jlIbL7sH-Gzj55CMJS2CjQ_LDsTGuyf',
-  siteUrl: 'https://koeni.pages.dev/'
+  // Use the active verified hostname for email confirmation / password reset.
+  // Keep the Pages hostname usable while DNS and Supabase redirects are migrated.
+  siteUrl: ['koesell.com', 'www.koesell.com'].includes(window.location.hostname)
+    ? window.location.origin + '/'
+    : 'https://koeni.pages.dev/'
 });
 
 </script>
