@@ -10,8 +10,7 @@ const cors = (origin: string | null) => ({
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Vary": "Origin",
 });
-let responseOrigin: string | null = null;
-const json = (body: unknown, status = 200, origin: string | null = responseOrigin) => new Response(JSON.stringify(body),{
+const json = (body: unknown, status = 200, origin: string | null = null) => new Response(JSON.stringify(body),{
   status,headers:{...cors(origin),"Content-Type":"application/json","Cache-Control":"no-store"}
 });
 const env=(k:string)=>Deno.env.get(k)||"";
@@ -38,27 +37,27 @@ async function stripePost(path:string,key:string,params:URLSearchParams,idempote
 }
 Deno.serve(async (req:Request)=>{
   const origin=req.headers.get("origin");
-  responseOrigin=origin;
+  const reply=(body: unknown,status=200)=>json(body,status,origin);
   if(req.method==="OPTIONS")return new Response(null,{status:204,headers:cors(origin)});
-  if(req.method!=="POST")return json({error:"method_not_allowed"},405,origin);
-  if(origin&&!ALLOWED_SITES.has(origin))return json({error:"origin_not_allowed"},403,origin);
+  if(req.method!=="POST")return reply({error:"method_not_allowed"},405);
+  if(origin&&!ALLOWED_SITES.has(origin))return reply({error:"origin_not_allowed"},403);
   const successSite=origin&&ALLOWED_SITES.has(origin)?origin:LEGACY_SITE;
   const token=req.headers.get("authorization")?.replace(/^Bearer\s+/i,"");
-  if(!token)return json({error:"login_required"},401,origin);
+  if(!token)return reply({error:"login_required"},401);
   const adminKey=serviceKey(),baseUrl=env("SUPABASE_URL");
-  if(!adminKey||!baseUrl)return json({error:"not_configured"},503);
+  if(!adminKey||!baseUrl)return reply({error:"not_configured"},503);
   const db=createClient(baseUrl,adminKey,{auth:{autoRefreshToken:false,persistSession:false}});
   try{
     const {data:session,error:authError}=await db.auth.getUser(token);
-    if(authError||!session?.user)return json({error:"login_required"},401);
+    if(authError||!session?.user)return reply({error:"login_required"},401);
     const data=await req.json();
     const listingId=typeof data?.listingId==="string"?data.listingId:"";
-    if(!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(listingId))return json({error:"invalid_listing"},400);
+    if(!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(listingId))return reply({error:"invalid_listing"},400);
     const {data:product,error:snapshotError}=await db.rpc("koesell_checkout_snapshot",{
       target_listing_id:listingId,purchasing_user_id:session.user.id
     });
     if(snapshotError)throw snapshotError;
-    if(!product?.ready)return json({error:"payments_not_available"},503);
+    if(!product?.ready)return reply({error:"payments_not_available"},503);
     // Reject forged/broken R2 catalog records before starting a payment.
     // Only Cloudflare's private R2 binding can check the actual stored object.
     if(product.storage_backend==="r2"){
@@ -68,27 +67,27 @@ Deno.serve(async (req:Request)=>{
         headers:{Authorization:"Bearer "+token},
         signal:AbortSignal.timeout(8000)
       });
-      if(!verification.ok)return json({error:"master_file_unavailable"},409);
+      if(!verification.ok)return reply({error:"master_file_unavailable"},409);
       const check=await verification.json().catch(()=>({exists:false}));
       if(!check.exists||check.path!==product.master_path)
-        return json({error:"master_file_unavailable"},409);
+        return reply({error:"master_file_unavailable"},409);
     }
     const key=env("STRIPE_SECRET_KEY");
-    if(!key)return json({error:"stripe_not_configured"},503);
+    if(!key)return reply({error:"stripe_not_configured"},503);
     if(!key.startsWith("sk_test_")&&env("KOESELL_ALLOW_LIVE_PAYMENTS")!=="yes")
-      return json({error:"live_payments_disabled"},503);
+      return reply({error:"live_payments_disabled"},503);
     const price=Number(product.price_yen),feeBps=Number(product.fee_bps);
     if(!Number.isInteger(price)||price<100||price>100000||!Number.isInteger(feeBps)||feeBps<0||feeBps>3000)
-      return json({error:"invalid_price_settings"},503);
-    if(!/^acct_[\w]+$/.test(product.stripe_account||""))return json({error:"seller_not_ready"},403);
+      return reply({error:"invalid_price_settings"},503);
+    if(!/^acct_[\w]+$/.test(product.stripe_account||""))return reply({error:"seller_not_ready"},403);
     const acct=await stripeGet("accounts/"+product.stripe_account,key);
     if(!acct?.payouts_enabled||acct?.capabilities?.transfers!=="active")
-      return json({error:"seller_not_ready"},403);
+      return reply({error:"seller_not_ready"},403);
     const since=new Date(Date.now()-3600000).toISOString();
     const recent=await db.from("voice_orders").select("id",{count:"exact",head:true})
       .eq("buyer_id",session.user.id).gte("created_at",since);
     if(recent.error)throw recent.error;
-    if((recent.count||0)>=12)return json({error:"rate_limited"},429);
+    if((recent.count||0)>=12)return reply({error:"rate_limited"},429);
     const fee=Math.round(price*feeBps/10000);
     const orderId=crypto.randomUUID();
     const orderRecord={
@@ -126,7 +125,7 @@ Deno.serve(async (req:Request)=>{
         .update({stripe_checkout_session_id:checkout.id})
         .eq("id",orderId).eq("status","pending");
       if(update.error)throw update.error;
-      return json({url:checkout.url,orderId});
+      return reply({url:checkout.url,orderId});
     }catch(e){
       await db.from("voice_orders").update({status:"payment_failed"})
         .eq("id",orderId).eq("status","pending");
@@ -134,6 +133,6 @@ Deno.serve(async (req:Request)=>{
     }
   }catch(e){
     console.error("KOESELL checkout server error",e instanceof Error?e.message:"unknown");
-    return json({error:"checkout_unavailable"},503);
+    return reply({error:"checkout_unavailable"},503);
   }
 });
