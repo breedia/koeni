@@ -143,7 +143,7 @@
         statusText('このブラウザでは録音できません。SafariでKOESELLを直接開いてください。');
         return;
       }
-      startBtn.disabled=true;statusText('マイクの使用許可を確認しています…');
+      startBtn.disabled=true;statusText('マイクの使用許可を確認しています…');visual?.arm();
       try {
         liveStream=await navigator.mediaDevices.getUserMedia({audio:true});
         if(!form.isConnected){releaseStream();return;}
