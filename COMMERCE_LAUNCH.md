@@ -69,3 +69,10 @@ Supabase secrets: https://supabase.com/docs/guides/functions/secrets
 - **未確認/ブロッカー**：運営のStripe本番登録・Connect有効化、`STRIPE_SECRET_KEY` のテスト鍵設定、端末でのConnect実動作検証。
 - 手数料設定と支払開始スイッチは未変更。
 - 新独自ドメインとの両立は [DOMAIN_MIGRATION.md](DOMAIN_MIGRATION.md) を参照。
+
+### Stripeテスト/本番アカウントを分離（v1.0b）
+
+- テスト用Stripe Connectアカウントは `koesell_private.seller_connect_test` に記録。
+- 本番用Stripe Connectアカウントは既存 `koesell_private.seller_connect` に記録（Checkoutが参照するのは本番だけ）。
+- モード別RPC `koesell_connect_get_mode` / `koesell_connect_set_mode` はservice_role以外から実行できない。
+- Stripeテスト環境が準備できても `payments_enabled` は自動で有効化しない。テスト決済フローは別途安全な限定環境で検証する。
