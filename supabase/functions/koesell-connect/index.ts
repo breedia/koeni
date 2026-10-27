@@ -41,8 +41,8 @@ async function stripe(path:string,key:string,params?:URLSearchParams,idempotency
     else if(lower.includes("temporarily restricted")||lower.includes("confirm that this is intentional"))reason="api_creation_restricted";
     else if(code==="platform_account_required"||lower.includes("not a connect platform"))reason="connect_platform_required";
     const scrubbed=message
-      .replace(/sk_(test|live)_[^\\s,]+/gi,"[REDACTED_KEY]")
-      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi,"[REDACTED_EMAIL]")
+      .replace(/sk_(test|live)_[a-zA-Z0-9]+/gi,"[REDACTED_KEY]")
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,"[REDACTED_EMAIL]")
       .replace(/acct_[a-zA-Z0-9]+/g,"[REDACTED_ACCOUNT]")
       .slice(0,340);
     console.error("KOESELL Stripe API rejection",JSON.stringify({
