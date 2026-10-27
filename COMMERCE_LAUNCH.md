@@ -76,3 +76,14 @@ Supabase secrets: https://supabase.com/docs/guides/functions/secrets
 - 本番用Stripe Connectアカウントは既存 `koesell_private.seller_connect` に記録（Checkoutが参照するのは本番だけ）。
 - モード別RPC `koesell_connect_get_mode` / `koesell_connect_set_mode` はservice_role以外から実行できない。
 - Stripeテスト環境が準備できても `payments_enabled` は自動で有効化しない。テスト決済フローは別途安全な限定環境で検証する。
+
+## Stripe Connect Accounts v2 移行記録（2026-10-28）
+
+- 実機テストで新規連結アカウント作成時に旧 `POST /v1/accounts` が Stripe HTTP 400 を返した。Supabase `function_logs` でも確認。
+- 新しい `koesell-connect`（Supabase Edge Function v6）は `POST /v2/core/accounts` に移行。日本の受取専用 `recipient`、`stripe_transfers`、`dashboard: express` を使う。
+- 送金先の状態確認は v2 `configuration.recipient.capabilities.stripe_balance.stripe_transfers/payouts.status` を参照。本人確認の入力はStripe-hosted onboarding（`/v2/core/account_links`）を利用する。
+- テスト環境の Account 作成成功をDB `seller_connect_test` にて1件確認。認証済みユーザーが Stripe にオンボードする途中のため、受取準備完了フラグはまだ `false`。
+- Stripeが400/409で拒否する場合、秘密情報なしで `stripeCode` を返し画面に安全な診断コードを表示する。
+- データベース `payments_enabled=false` は変更していない。テスト用アカウントを本番には使わない。
+- v2 の `dashboard: express` および `losses_collector: application` にはプラットフォーム側で負残高を負担する責任がある。**本番稼働前に損失・返金・チャージバック・出品者審査の運用を確定すること**。
+- Stripeの仕様変更により Accounts v2 のアカウント作成に移行。APIは `2026-07-29.dahlia` でピン留めし、以後バージョン更新時はテスト環境で検証する。
