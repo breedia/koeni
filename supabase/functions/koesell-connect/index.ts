@@ -19,39 +19,35 @@ const json=(body:unknown,status:number,origin:string|null)=>new Response(JSON.st
   status,headers:{...cors(origin),"Content-Type":"application/json","Cache-Control":"no-store",
     "X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"}
 });
-async function stripe(path:string,key:string,params?:URLSearchParams,idempotency?:string){
-  const headers:Record<string,string>={Authorization:"Bearer "+key};
-  if(params)headers["Content-Type"]="application/x-www-form-urlencoded";
-  if(idempotency)headers["Idempotency-Key"]=idempotency;
-  const res=await fetch("https://api.stripe.com/v1/"+path,{
-    method:params?"POST":"GET",headers,body:params?.toString(),
+// Stripe Accounts v2 recipient marketplace flow (v1 account creation is restricted for new platforms).
+const STRIPE_V2_VERSION="2026-07-29.dahlia";
+class StripeRequestError extends Error{
+  stage:string;status:number;stripeCode:string;
+  constructor(stage:string,status:number,code:string){
+    super("Stripe "+stage+" "+status+" "+code);
+    this.stage=stage;this.status=status;this.stripeCode=code;
+  }
+}
+async function stripeV2(path:string,key:string,opts?:{
+  stage?:string,body?:Record<string,unknown>,idempotency?:string
+}){
+  const headers:Record<string,string>={
+    Authorization:"Bearer "+key,"Stripe-Version":STRIPE_V2_VERSION
+  };
+  if(opts?.body)headers["Content-Type"]="application/json";
+  if(opts?.idempotency)headers["Idempotency-Key"]=opts.idempotency;
+  const res=await fetch("https://api.stripe.com/v2/core/"+path,{
+    method:opts?.body?"POST":"GET",headers,
+    body:opts?.body?JSON.stringify(opts.body):undefined,
     signal:AbortSignal.timeout(12000)
   });
-  const data=await res.json();
+  const response=await res.json().catch(()=>({}));
   if(!res.ok){
-    const stripeError=data?.error||{};
-    const code=String(stripeError.code||"").replace(/[^a-zA-Z0-9_]/g,"").slice(0,60);
-    const message=typeof stripeError.message==="string"?stripeError.message:"";
-    const lower=message.toLowerCase();
-    let reason="stripe_rejected_request";
-    if(lower.includes("accounts v1")||lower.includes("post /v2/core/accounts"))reason="accounts_v1_requires_opt_in";
-    else if(lower.includes("transfers")&&lower.includes("card_payments")&&lower.includes("approval"))reason="transfers_requires_approval";
-    else if(lower.includes("platform")&&(lower.includes("profile")||lower.includes("onboarding")))reason="platform_profile_required";
-    else if(lower.includes("must be activated")||lower.includes("activate your account"))reason="platform_activation_required";
-    else if(lower.includes("temporarily restricted")||lower.includes("confirm that this is intentional"))reason="api_creation_restricted";
-    else if(code==="platform_account_required"||lower.includes("not a connect platform"))reason="connect_platform_required";
-    const scrubbed=message
-      .replace(/sk_(test|live)_[a-zA-Z0-9]+/gi,"[REDACTED_KEY]")
-      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,"[REDACTED_EMAIL]")
-      .replace(/acct_[a-zA-Z0-9]+/g,"[REDACTED_ACCOUNT]")
-      .slice(0,340);
-    console.error("KOESELL Stripe API rejection",JSON.stringify({
-      operation:path.split("/")[0],status:res.status,reason,stripeCode:code,
-      message:scrubbed,requestId:(res.headers.get("request-id")||"").slice(0,100)
-    }));
-    throw new Error("stripe_diagnostic_"+reason);
+    const code=response?.error?.code||response?.error?.type||"unknown";
+    const safe=typeof code==="string"&&/^[a-z0-9_]{2,80}$/.test(code)?code:"unknown";
+    throw new StripeRequestError(opts?.stage||"request",res.status,safe);
   }
-  return data;
+  return response;
 }
 Deno.serve(async(req:Request)=>{
   const origin=req.headers.get("origin");
@@ -97,13 +93,24 @@ Deno.serve(async(req:Request)=>{
     if(accountId&&!/^acct_[a-zA-Z0-9]+$/.test(accountId))
       return reply({error:"seller_account_invalid"},503);
     if(!accountId&&action==="onboard"){
-      const params=new URLSearchParams({
-        type:"express",country:"JP",
-        "capabilities[transfers][requested]":"true",
-        "metadata[koesell_user_id]":user.id
+      // Recipient-only: KOESELL collects payment and pays sellers after retaining fees.
+      const payload:Record<string,unknown>={
+        dashboard:"express",
+        identity:{country:"jp"},
+        configuration:{recipient:{capabilities:{
+          stripe_balance:{stripe_transfers:{requested:true}}
+        }}},
+        defaults:{
+          currency:"jpy",
+          responsibilities:{fees_collector:"application",losses_collector:"application"}
+        },
+        metadata:{koesell_user_id:user.id}
+      };
+      if(user.email&&user.email_confirmed_at)payload.contact_email=user.email;
+      const created=await stripeV2("accounts",key,{
+        body:payload,idempotency:"koesell-recipient-v2-"+mode+"-"+user.id,
+        stage:"create_account"
       });
-      if(user.email&&user.email_confirmed_at)params.set("email",user.email);
-      const created=await stripe("accounts",key,params,"koesell-express-"+mode+"-"+user.id);
       if(!/^acct_[a-zA-Z0-9]+$/.test(created?.id||""))
         return reply({error:"seller_account_create_failed"},503);
       accountId=created.id;
@@ -114,39 +121,53 @@ Deno.serve(async(req:Request)=>{
       if(saved.error)throw saved.error;
     }
     if(!accountId)return reply({configured:true,mode,connected:false,ready:false});
-    const account=await stripe("accounts/"+accountId,key);
+    const account=await stripeV2(
+      "accounts/"+encodeURIComponent(accountId)+"?include[0]=configuration.recipient",
+      key,{stage:"retrieve_account"}
+    );
     if(account.id!==accountId)return reply({error:"seller_account_mismatch"},503);
-    const transfersActive=account.capabilities?.transfers==="active";
-    const ready=account.payouts_enabled===true&&transfersActive;
+    const bal=account.configuration?.recipient?.capabilities?.stripe_balance;
+    const transfersActive=bal?.stripe_transfers?.status==="active";
+    const payoutsEnabled=bal?.payouts?.status==="active";
+    const ready=transfersActive&&payoutsEnabled;
     const synced=await db.rpc("koesell_connect_set_mode",{
       target_user_id:user.id,target_account_id:accountId,target_mode:mode,
-      target_payouts_enabled:ready,target_details_submitted:account.details_submitted===true
+      target_payouts_enabled:ready,target_details_submitted:ready
     });
     if(synced.error)throw synced.error;
     if(action==="status"){
       return reply({
         configured:true,mode,connected:true,ready,
-        payoutsEnabled:account.payouts_enabled===true,
-        transfersActive,detailsSubmitted:account.details_submitted===true
+        payoutsEnabled,transfersActive,detailsSubmitted:ready
       });
     }
     const site=origin&&ALLOWED_SITES.has(origin)?origin:LEGACY_SITE;
-    const parameters=new URLSearchParams({
-      account:accountId,type:"account_onboarding",
-      refresh_url:site+"/?stripe_connect=refresh",
-      return_url:site+"/?stripe_connect=return"
+    const link=await stripeV2("account_links",key,{
+      body:{
+        account:accountId,
+        use_case:{
+          type:"account_onboarding",
+          account_onboarding:{
+            configurations:["recipient"],
+            refresh_url:site+"/?stripe_connect=refresh",
+            return_url:site+"/?stripe_connect=return"
+          }
+        }
+      },
+      stage:"onboarding_link"
     });
-    const link=await stripe("account_links",key,parameters);
     const redirect=new URL(link?.url||"");
     if(redirect.protocol!=="https:"||redirect.hostname!=="connect.stripe.com")
       return reply({error:"invalid_stripe_link"},503);
     return reply({url:link.url,mode});
   }catch(e){
-    const tag=e instanceof Error?e.message:"unknown";
-    if(tag.startsWith("stripe_diagnostic_")){
-      return reply({error:"stripe_connect_rejected",reason:tag.slice("stripe_diagnostic_".length)},503);
+    if(e instanceof StripeRequestError){
+      console.error("KOESELL Connect Stripe rejected",e.stage,e.status,e.stripeCode);
+      return reply({
+        error:"stripe_connect_rejected",stage:e.stage,stripeCode:e.stripeCode
+      },409);
     }
-    console.error("KOESELL Connect error",tag);
+    console.error("KOESELL Connect error",e instanceof Error?e.name:"unknown");
     return reply({error:"connect_unavailable"},503);
   }
 });
