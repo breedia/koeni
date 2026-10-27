@@ -17,12 +17,16 @@
       let response=null;
       try{response=await error.context?.json?.()}catch(_){}
       const e=new Error(response?.error||error.message||'connect_request_failed');
-      e.reason=typeof response?.reason==='string'?response.reason:'';
+      e.reason=typeof response?.reason==='string'?response.reason:
+        typeof response?.stripeCode==='string'?response.stripeCode:'';
+      e.stage=typeof response?.stage==='string'?response.stage:'';
       throw e;
     }
     if(data?.error){
       const e=new Error(data.error);
-      e.reason=typeof data.reason==='string'?data.reason:'';
+      e.reason=typeof data.reason==='string'?data.reason:
+        typeof data.stripeCode==='string'?data.stripeCode:'';
+      e.stage=typeof data.stage==='string'?data.stage:'';
       throw e;
     }
     return data||{};
@@ -72,6 +76,7 @@
     if(!db()||!me()){auth()?.open?.();return}
     busy=true;
     const button=document.getElementById('connectStart');
+    const originalLabel=button?.textContent||'Stripeで登録を始める →';
     if(button){button.disabled=true;button.textContent='Stripeに接続しています…'}
     try{
       const info=await invoke('onboard');
@@ -87,7 +92,16 @@
         platform_profile_required:'Stripe Connectのプラットフォーム情報が未設定です。',
         platform_activation_required:'Stripe側の事業者登録が未完了です。',
         api_creation_restricted:'StripeがAPIからの出品者作成を制限しています。',
-        connect_platform_required:'Stripe Connectの利用設定が必要です。'
+        connect_platform_required:'Stripe Connectの利用設定が必要です。',
+        account_creation_liability_unacknowledged:'Stripe Connectで損失負担に関する設定が必要です。',
+        account_creation_requirement_collection_and_liability_unacknowledged:'Stripe Connectで本人確認と損失負担の確認が必要です。',
+        account_creation_requirement_collection_unacknowledged:'Stripe Connectで本人確認の収集設定が必要です。',
+        connect_profile_not_submitted:'Stripe Connectのプラットフォーム情報を完了してください。',
+        account_create_activation_required:'Stripe Connectの有効化手続きが必要です。',
+        connect_identity_not_verified:'Stripeでプラットフォーム本人確認が未完了です。',
+        accounts_v2_access_blocked:'StripeでAccounts v2の利用許可が必要です。',
+        account_capability_not_supported:'Stripeで送金機能を利用できません。Connect設定を確認してください。',
+        cannot_create_connected_account:'Stripeが連結アカウント作成を制限しています。Connect設定を確認してください。'
       };
       const reason=typeof err.reason==='string'&&err.reason?err.reason:'unclassified';
       const message=messages[reason]||'Stripeが出品者登録を拒否しました。運営側で詳細を確認します。';
@@ -103,7 +117,7 @@
         if(old)old.replaceWith(p);
         else container.appendChild(p);
       }
-      if(button?.isConnected){button.disabled=false;button.textContent='Stripeで登録を始める →'}
+      if(button?.isConnected){button.disabled=false;button.textContent=originalLabel}
     }finally{busy=false}
   }
   let restoring=false;
