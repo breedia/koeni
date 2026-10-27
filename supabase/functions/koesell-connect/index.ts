@@ -28,7 +28,29 @@ async function stripe(path:string,key:string,params?:URLSearchParams,idempotency
     signal:AbortSignal.timeout(12000)
   });
   const data=await res.json();
-  if(!res.ok)throw Error("stripe_"+path.split("/")[0]+"_"+res.status);
+  if(!res.ok){
+    const stripeError=data?.error||{};
+    const code=String(stripeError.code||"").replace(/[^a-zA-Z0-9_]/g,"").slice(0,60);
+    const message=typeof stripeError.message==="string"?stripeError.message:"";
+    const lower=message.toLowerCase();
+    let reason="stripe_rejected_request";
+    if(lower.includes("accounts v1")||lower.includes("post /v2/core/accounts"))reason="accounts_v1_requires_opt_in";
+    else if(lower.includes("transfers")&&lower.includes("card_payments")&&lower.includes("approval"))reason="transfers_requires_approval";
+    else if(lower.includes("platform")&&(lower.includes("profile")||lower.includes("onboarding")))reason="platform_profile_required";
+    else if(lower.includes("must be activated")||lower.includes("activate your account"))reason="platform_activation_required";
+    else if(lower.includes("temporarily restricted")||lower.includes("confirm that this is intentional"))reason="api_creation_restricted";
+    else if(code==="platform_account_required"||lower.includes("not a connect platform"))reason="connect_platform_required";
+    const scrubbed=message
+      .replace(/sk_(test|live)_[^\\s,]+/gi,"[REDACTED_KEY]")
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi,"[REDACTED_EMAIL]")
+      .replace(/acct_[a-zA-Z0-9]+/g,"[REDACTED_ACCOUNT]")
+      .slice(0,340);
+    console.error("KOESELL Stripe API rejection",JSON.stringify({
+      operation:path.split("/")[0],status:res.status,reason,stripeCode:code,
+      message:scrubbed,requestId:(res.headers.get("request-id")||"").slice(0,100)
+    }));
+    throw new Error("stripe_diagnostic_"+reason);
+  }
   return data;
 }
 Deno.serve(async(req:Request)=>{
@@ -120,7 +142,11 @@ Deno.serve(async(req:Request)=>{
       return reply({error:"invalid_stripe_link"},503);
     return reply({url:link.url,mode});
   }catch(e){
-    console.error("KOESELL Connect error",e instanceof Error?e.message:"unknown");
+    const tag=e instanceof Error?e.message:"unknown";
+    if(tag.startsWith("stripe_diagnostic_")){
+      return reply({error:"stripe_connect_rejected",reason:tag.slice("stripe_diagnostic_".length)},503);
+    }
+    console.error("KOESELL Connect error",tag);
     return reply({error:"connect_unavailable"},503);
   }
 });
