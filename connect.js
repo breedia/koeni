@@ -11,8 +11,20 @@
     const client=db();
     if(!client||!me())throw Error('login_required');
     const {data,error}=await client.functions.invoke('koesell-connect',{body:{action}});
-    if(error)throw error;
-    if(data?.error)throw Error(data.error);
+    if(error){
+      // Supabase returns HTTP >=400 as FunctionsHttpError. Extract our safe
+      // diagnostic code from the JSON response without exposing Stripe secrets.
+      let response=null;
+      try{response=await error.context?.json?.()}catch(_){}
+      const e=new Error(response?.error||error.message||'connect_request_failed');
+      e.reason=typeof response?.reason==='string'?response.reason:'';
+      throw e;
+    }
+    if(data?.error){
+      const e=new Error(data.error);
+      e.reason=typeof data.reason==='string'?data.reason:'';
+      throw e;
+    }
     return data||{};
   }
   async function open(){
@@ -69,8 +81,29 @@
       window.location.assign(info.url);
     }catch(err){
       console.warn('KOESELL connect onboarding',err);
-      notice('Stripeの登録を開始できません。運営側の接続設定が完了してからお試しください。');
-      if(button?.isConnected){button.disabled=false;button.textContent='Stripeで登録を再開する →'}
+      const messages={
+        accounts_v1_requires_opt_in:'StripeのAccounts v1互換設定が必要です。運営側で対応します。',
+        transfers_requires_approval:'Stripeで送金機能の承認が必要です。運営側で対応します。',
+        platform_profile_required:'Stripe Connectのプラットフォーム情報が未設定です。',
+        platform_activation_required:'Stripe側の事業者登録が未完了です。',
+        api_creation_restricted:'StripeがAPIからの出品者作成を制限しています。',
+        connect_platform_required:'Stripe Connectの利用設定が必要です。'
+      };
+      const reason=typeof err.reason==='string'&&err.reason?err.reason:'unclassified';
+      const message=messages[reason]||'Stripeが出品者登録を拒否しました。運営側で詳細を確認します。';
+      notice(message);
+      const container=document.getElementById('connectFailure')||document.getElementById('connectStart')?.parentElement;
+      if(container){
+        const p=document.createElement('p');
+        p.id='connectFailure';
+        p.className='muted';
+        p.style.cssText='color:#aa2929;font-size:.9rem;margin:12px 0;';
+        p.textContent=message+'（診断コード: '+reason.slice(0,50)+'）';
+        const old=document.getElementById('connectFailure');
+        if(old)old.replaceWith(p);
+        else container.appendChild(p);
+      }
+      if(button?.isConnected){button.disabled=false;button.textContent='Stripeで登録を始める →'}
     }finally{busy=false}
   }
   let restoring=false;
