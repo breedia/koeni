@@ -87,3 +87,13 @@ Supabase secrets: https://supabase.com/docs/guides/functions/secrets
 - データベース `payments_enabled=false` は変更していない。テスト用アカウントを本番には使わない。
 - v2 の `dashboard: express` および `losses_collector: application` にはプラットフォーム側で負残高を負担する責任がある。**本番稼働前に損失・返金・チャージバック・出品者審査の運用を確定すること**。
 - Stripeの仕様変更により Accounts v2 のアカウント作成に移行。APIは `2026-07-29.dahlia` でピン留めし、以後バージョン更新時はテスト環境で検証する。
+
+## Stripe Connect の出品者事業情報自動入力（2026-10-28）
+
+- Accounts v2 `defaults.profile.product_description` に、音声素材の販売・台本指定の録音サービスを新規出品者ごとに自動入力。これは出品者のサービス説明であり、運営会社の事業説明とは別。
+- `seller.html?id=<出品者UUID>` を公開プロフィールとして追加。出品者の**公開中**の出品とサービス説明のみを表示し、本名・住所・メールアドレス・振込先は一切公開しない。
+- `koesell-connect` は `https://koeni.pages.dev/seller.html` に固有マーカーが公開反映済みの場合だけ、そのURLを各出品者の `defaults.profile.business_url` に自動入力。Cloudflare未反映時は無効なURLを渡さず、説明文のみを自動入力する。
+- 登録途中の既存Connectアカウントにも、次回の「登録を続ける」時、未入力の事業URL・商品説明だけを補完。本人が既に入力した内容は上書きしない。
+- Supabase Edge Function `koesell-connect` **v7にデプロイ済み**。Cloudflare Pages のGitHubコミット取り込み・公開ページへの到達・実際のStripeテスト画面の変化は未確認。
+- **残タスク**：Cloudflare側で `seller.html` の公開反映、実機でプロフィールページ表示とStripeへのURL/説明文の反映を確認。Stripeの追加審査・本人確認・銀行口座は自動省略できない。
+- `payments_enabled=false` のままであり、テスト用出品者と本番決済を混ぜない。
