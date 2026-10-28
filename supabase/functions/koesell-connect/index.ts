@@ -21,6 +21,25 @@ const json=(body:unknown,status:number,origin:string|null)=>new Response(JSON.st
 });
 // Stripe Accounts v2 recipient marketplace flow (v1 account creation is restricted for new platforms).
 const STRIPE_V2_VERSION="2026-07-29.dahlia";
+// These are the seller's offerings, not KOESELL's own platform services.
+// Do not insert personal identity or bank data here.
+const SELLER_PRODUCT_DESCRIPTION=
+  "KOESELL（コエセル）の出品者として、オリジナルの録音音声素材の販売と、" +
+  "依頼された台本に沿ったナレーション・セリフ等の音声収録サービスを提供します。";
+// Only set Stripe's public website when the seller page has actually been deployed.
+// Cloudflare may need a separate release after the GitHub commit.
+async function publishedSellerUrl(userId:string):Promise<string|null>{
+  const page=LEGACY_SITE+"/seller.html?id="+encodeURIComponent(userId);
+  try{
+    const response=await fetch(LEGACY_SITE+"/seller.html",{
+      headers:{"Cache-Control":"no-cache"},
+      signal:AbortSignal.timeout(4000)
+    });
+    if(!response.ok)return null;
+    const markup=await response.text();
+    return markup.includes("KOESELL_SELLER_PAGE_V1")?page:null;
+  }catch{return null;}
+}
 class StripeRequestError extends Error{
   stage:string;status:number;stripeCode:string;
   constructor(stage:string,status:number,code:string){
@@ -90,6 +109,8 @@ Deno.serve(async(req:Request)=>{
     const snapshot=await db.rpc("koesell_connect_get_mode",{target_user_id:user.id,target_mode:mode});
     if(snapshot.error)throw snapshot.error;
     let accountId=typeof snapshot.data?.accountId==="string"?snapshot.data.accountId:"";
+    // Check once when onboarding, never for routine status polling.
+    const sellerUrl=action==="onboard"?await publishedSellerUrl(user.id):null;
     if(accountId&&!/^acct_[a-zA-Z0-9]+$/.test(accountId))
       return reply({error:"seller_account_invalid"},503);
     if(!accountId&&action==="onboard"){
@@ -102,6 +123,11 @@ Deno.serve(async(req:Request)=>{
         }}},
         defaults:{
           currency:"jpy",
+          locales:["ja-JP"],
+          profile:{
+            product_description:SELLER_PRODUCT_DESCRIPTION,
+            ...(sellerUrl?{business_url:sellerUrl}:{})
+          },
           responsibilities:{fees_collector:"application",losses_collector:"application"}
         },
         metadata:{koesell_user_id:user.id}
@@ -122,10 +148,30 @@ Deno.serve(async(req:Request)=>{
     }
     if(!accountId)return reply({configured:true,mode,connected:false,ready:false});
     const account=await stripeV2(
-      "accounts/"+encodeURIComponent(accountId)+"?include[0]=configuration.recipient",
+      "accounts/"+encodeURIComponent(accountId)+"?include[0]=configuration.recipient&include[1]=defaults",
       key,{stage:"retrieve_account"}
     );
     if(account.id!==accountId)return reply({error:"seller_account_mismatch"},503);
+    if(action==="onboard"){
+      // Backfill test/existing connected accounts while keeping any seller edits.
+      const existing=account.defaults?.profile||{};
+      const missingDescription=!String(existing.product_description||"").trim();
+      const missingUrl=!String(existing.business_url||"").trim()&&!!sellerUrl;
+      if(missingDescription||missingUrl){
+        const profile:Record<string,string>={};
+        if(missingDescription)profile.product_description=SELLER_PRODUCT_DESCRIPTION;
+        if(missingUrl&&sellerUrl)profile.business_url=sellerUrl;
+        try{
+          await stripeV2("accounts/"+encodeURIComponent(accountId),key,{
+            body:{defaults:{profile}},stage:"prefill_seller_profile"
+          });
+        }catch(e){
+          // Do not block KYC if an older account disallows changes.
+          console.error("KOESELL seller profile prefill unavailable",
+            e instanceof StripeRequestError?e.stripeCode:"unknown");
+        }
+      }
+    }
     const bal=account.configuration?.recipient?.capabilities?.stripe_balance;
     const transfersActive=bal?.stripe_transfers?.status==="active";
     const payoutsEnabled=bal?.payouts?.status==="active";
