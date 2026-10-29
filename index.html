@@ -157,7 +157,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
   'use strict';
   const cfg = window.KOENI_AUTH_CONFIG || {};
   const configured = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(cfg.url || '') && /^sb_publishable_|^eyJ/.test(cfg.publishableKey || '');
-  const state = { client: null, user: null, busy: false, view: 'login', ready: !configured, message: '', error: '' };
+  const state = { client: null, user: null, busy: false, view: 'login', ready: !configured, message: '', error: '', pendingEmail: '' };
   const trigger = document.getElementById('authTrigger');
   if (!trigger) return;
   const root = document.createElement('div');
@@ -180,6 +180,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
     .auth-links{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:20px}
     .auth-links button{background:none;border:0;color:#6245da;text-decoration:underline;font-size:12px;font-weight:700;padding:3px 0}
     .auth-info{padding:12px 14px;background:#f0edfc;border:1px solid #e2dbff;border-radius:12px;color:#463482;font-size:12px;line-height:1.65;margin:12px 0}
+    .auth-sent{text-align:center;padding:8px 0 4px}.auth-sent-icon{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;margin:0 auto 16px;background:#e8f7ee;color:#238052;font-size:31px;font-weight:800}.auth-sent h3{font-size:19px;margin:0 0 10px}.auth-sent p{font-size:13px;color:#615c6c;line-height:1.85;margin:0 0 12px}.auth-sent-email{background:#f5f2ff;border-radius:12px;padding:12px;margin:15px 0;overflow-wrap:anywhere;font-weight:800;font-size:13px;color:#4934a0}.auth-sent .auth-muted{font-weight:400;font-size:12px}
     .auth-error{padding:12px 14px;background:#fff0f1;color:#a02942;border:1px solid #ffd4da;border-radius:12px;font-size:12px;line-height:1.65;margin:12px 0}
     .auth-account{overflow-wrap:anywhere;border:1px solid #eae7ee;border-radius:14px;padding:16px;font-size:14px}
     .auth-muted{font-size:12px;color:#756f7d;margin-top:14px;line-height:1.65}
@@ -187,7 +188,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
   `;
   document.head.append(style);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  const titles = {login:'ログイン', signup:'無料会員登録', forgot:'パスワードを再設定', reset:'新しいパスワード', account:'アカウント'};
+  const titles = {login:'ログイン', signup:'無料会員登録', 'check-email':'認証メールを送信しました', forgot:'パスワードを再設定', reset:'新しいパスワード', account:'アカウント'};
   function updateTrigger() {
     trigger.textContent = state.user ? 'アカウント' : 'ログイン / 登録';
     trigger.setAttribute('aria-label', state.user ? 'アカウントを開く' : 'ログインと会員登録');
@@ -203,6 +204,7 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
   function formHTML() {
     if (!configured) return `<div class="auth-info">現在、会員登録機能は準備中です。KOESELL専用の認証サーバーを接続したあと利用できるようになります。</div><p class="auth-muted">声の検索・試聴・出品デモはこれまでどおり使えます。デモの出品情報はこの端末だけに保存され、アカウントとは同期されません。</p>`;
     if (!state.ready) return '<div class="auth-info">認証サービスに接続しています…</div>';
+    if (state.view === 'check-email') return `<div class="auth-sent" role="status"><div class="auth-sent-icon" aria-hidden="true">✓</div><h3>メールをご確認ください</h3><p>ご登録のメールアドレスに認証メールを送信しました。</p><div class="auth-sent-email">${esc(state.pendingEmail)}</div><p>受信したメールにある「Confirm email address」を押すと、登録が完了します。</p><p class="auth-muted">メールが見つからない場合は、迷惑メールフォルダも確認してください。</p><button class="btn primary auth-primary" type="button" data-auth="login">ログイン画面へ</button></div>`;
     if (state.view === 'account') {
       if (!state.user) { state.view = 'login'; return formHTML(); }
       const email = state.user.email || 'メールアドレス未登録';
@@ -219,10 +221,10 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
       ${signup?'<div class="auth-field"><label for="auth-confirm">パスワード（確認）</label><input id="auth-confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" required></div>':''}
       <label class="auth-showpass"><input id="auth-visibility" type="checkbox"> パスワードを表示</label>
       <button class="btn primary auth-primary" type="submit" ${state.busy?'disabled':''}>${signup?'会員登録する':'ログインする'}</button>
-    </form><p class="auth-muted">※ 音声出品・購入画面は引き続きデモです。一般向けの確認メール配信は準備中のため、会員登録は運営テストを優先しています。</p>`;
+    </form><p class="auth-muted">※ メール認証が必要です。音声の購入・決済・収録依頼は引き続きデモです。</p>`;
   }
   function linksHTML() {
-    if (!configured || state.view === 'account' || state.view === 'reset') return '';
+    if (!configured || state.view === 'account' || state.view === 'reset' || state.view === 'check-email') return '';
     if (state.view === 'login') return '<div class="auth-links"><button data-auth="signup">はじめての方は無料会員登録</button><button data-auth="forgot">パスワードを忘れた方</button></div>';
     return '<div class="auth-links"><button data-auth="login">ログイン画面へ戻る</button></div>';
   }
@@ -268,8 +270,8 @@ window.KOENI_AUTH_CONFIG = Object.freeze({
       if (kind === 'signup') {
         const {data: result,error} = await state.client.auth.signUp({ email, password, options: {data:{display_name:displayName},emailRedirectTo:cfg.siteUrl} });
         if (error) throw error;
-        state.message = result.session ? '登録・ログインしました。' : '確認メールを送信しました。メール内のリンクから登録を完了してください。';
-        if (result.session) state.user = result.user;
+        if (result.session) { state.user = result.user; state.view = 'account'; state.message = '登録・ログインしました。'; }
+        else { state.pendingEmail = email; state.view = 'check-email'; state.message = ''; }
       } else if (kind === 'login') {
         const {data: result,error} = await state.client.auth.signInWithPassword({email,password});
         if (error) throw error;
