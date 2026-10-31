@@ -63,13 +63,57 @@
           '<button type="button" class="btn light" id="connectRefresh">状態を更新</button></div>';
       }
       pending.outerHTML=html;
-      document.getElementById('connectStart')?.addEventListener('click',()=>onboard());
+      document.getElementById('connectStart')?.addEventListener('click',()=>embedded());
       document.getElementById('connectRefresh')?.addEventListener('click',()=>open());
     }catch(err){
       console.warn('KOESELL connect status',err);
       const p=document.getElementById('connectLoading');
       if(p)p.textContent='Stripeの登録状況を確認できませんでした。時間をおいて再度お試しください。';
     }
+  }
+  let sdkLoading=null;
+  function loadSdk(){
+    if(window.StripeConnect)return Promise.resolve();
+    if(sdkLoading)return sdkLoading;
+    sdkLoading=new Promise((resolve,reject)=>{
+      const script=document.createElement('script');
+      script.src='https://connect-js.stripe.com/v1.0/connect.js';
+      script.onload=()=>window.StripeConnect?resolve():reject(Error('sdk_unavailable'));
+      script.onerror=()=>reject(Error('sdk_unavailable'));
+      document.head.appendChild(script);
+    });
+    return sdkLoading;
+  }
+  async function embedded(){
+    if(busy)return;
+    busy=true;
+    const button=document.getElementById('connectStart');
+    if(button){button.disabled=true;button.textContent='登録画面を準備中…'}
+    try{
+      const session=await invoke('embedded');
+      await loadSdk();
+      let first=session.clientSecret;
+      const instance=window.StripeConnect.init({
+        publishableKey:session.publishableKey,
+        fetchClientSecret:async()=>{
+          if(first){const value=first;first=null;return value}
+          return (await invoke('embedded')).clientSecret;
+        },
+        appearance:{variables:{colorPrimary:'#6246b5'}}
+      });
+      const root=document.getElementById('connectStart')?.parentElement;
+      if(!root)throw Error('modal_closed');
+      root.outerHTML='<div id="connectEmbedHost" style="min-height:350px;margin:12px 0"></div><button type="button" class="btn light" id="connectEmbedRefresh">登録状況を確認</button>';
+      const component=instance.create('account-onboarding');
+      component.setOnExit(()=>open());
+      document.getElementById('connectEmbedHost').appendChild(component);
+      document.getElementById('connectEmbedRefresh')?.addEventListener('click',open);
+    }catch(err){
+      console.warn('KOESELL embedded onboarding',err);
+      notice('サイト内登録を利用できないため、Stripeの登録画面に切り替えます');
+      busy=false;
+      await onboard();
+    }finally{busy=false}
   }
   async function onboard(){
     if(busy)return;
